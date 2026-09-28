@@ -49,7 +49,33 @@ def test_pair_stats():
     assert s["positive_pairs_all"] == 1
     assert s["positive_pairs_diff_name"] == 1
     # Both Acme spellings normalize to the same string
+    assert s["positive_pairs_diff_norm_name"] == 0
     assert s["ueis_multi_after_normalization"] == 0
+    assert s["related_pairs_same_parent"] == 0
+
+
+def test_related_pairs_counts_different_ueis_under_one_parent():
+    rows = [
+        ("C1", "Parent East Inc", "", "PX", "PARENT", "1 A St", "Reno", "NV", "89501", "USA", "a"),
+        ("C2", "Parent West Inc", "", "PX", "PARENT", "2 B St", "Reno", "NV", "89501", "USA", "a"),
+        ("C2", "PARENT WEST INC.", "", "PX", "PARENT", "2 B St", "Reno", "NV", "89501", "USA", "a"),
+    ]
+    s = pair_stats(build_candidates(tx(rows)))
+    # C1 pairs with each of C2's two rows; the C2-C2 pair is a positive, not related.
+    assert s["related_pairs_same_parent"] == 2
+    assert s["positive_pairs_all"] == 1
+
+
+def test_vendor_file_never_contains_uei(tmp_path, monkeypatch):
+    import extract.build_vendor_master as bvm
+
+    monkeypatch.setattr(bvm, "OUT_VENDORS", tmp_path / "vendors.parquet")
+    monkeypatch.setattr(bvm, "OUT_LABELS", tmp_path / "labels" / "labels.parquet")
+    bvm.write_outputs(build_candidates(tx(ROWS)))
+    vendors = pd.read_parquet(tmp_path / "vendors.parquet")
+    labels = pd.read_parquet(tmp_path / "labels" / "labels.parquet")
+    assert not {"uei", "parent_uei", "parent_name_raw"} & set(vendors.columns)
+    assert list(vendors["vendor_id"]) == list(labels["vendor_id"])
 
 
 def test_sample_keeps_multi_spelling_ueis_and_is_seeded():

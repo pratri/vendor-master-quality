@@ -130,16 +130,27 @@ def pair_stats(vendors: pd.DataFrame) -> dict:
         "ueis_multi_spelling": len(multi),
         # Every two rows sharing a UEI is a positive pair (same supplier created twice).
         "positive_pairs_all": int(sum(comb(n, 2) for n in per_uei["rows"])),
-        "positive_pairs_diff_name": int(different_name_pairs(vendors)),
+        "positive_pairs_diff_name": int(different_pairs(vendors, "name_raw")),
+        # Pairs that still differ after normalization are the hard ones for the matcher.
+        "positive_pairs_diff_norm_name": int(different_pairs(vendors, "name_norm")),
         "ueis_multi_after_normalization": int((per_uei["norms"] >= 2).sum()),
+        "related_pairs_same_parent": related_pairs(vendors),
     }
 
 
-def different_name_pairs(vendors: pd.DataFrame) -> int:
+def related_pairs(vendors: pd.DataFrame) -> int:
+    """Row pairs with different UEIs but the same parent UEI (distinct but related companies)."""
+    v = vendors[(vendors["parent_uei"] != "") & (vendors["parent_uei"] != vendors["uei"])]
+    same_parent = sum(comb(n, 2) for n in v.groupby("parent_uei").size())
+    same_uei = sum(comb(n, 2) for n in v.groupby(["parent_uei", "uei"]).size())
+    return int(same_parent - same_uei)
+
+
+def different_pairs(vendors: pd.DataFrame, col: str) -> int:
     total = 0
     for _, g in vendors.groupby("uei"):
         if len(g) > 1:
-            total += sum(a != b for a, b in combinations(g["name_raw"].tolist(), 2))
+            total += sum(a != b for a, b in combinations(g[col].tolist(), 2))
     return total
 
 
