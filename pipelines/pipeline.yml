@@ -18,3 +18,4 @@ resources:
       configuration:
         inbox: /Volumes/${var.catalog}/${resources.schemas.vendor_mdq.name}/landing/inbox
         initial_load_date: ${var.initial_load_date}
+        matcher_output: /Volumes/${var.catalog}/${resources.schemas.vendor_mdq.name}/landing/matcher/duplicate_candidates.parquet

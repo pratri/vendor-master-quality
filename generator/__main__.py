@@ -10,7 +10,6 @@ Layout (table first, so each bronze table reads one folder):
 """
 
 import argparse
-import json
 import shutil
 import subprocess
 from dataclasses import replace
@@ -22,6 +21,7 @@ import pyarrow.parquet as pq
 
 from generator.config import Config
 from generator.simulate import Simulator
+from generator.volume import landing_volume
 
 VENDORS = Path("data/vendor_master.parquet")
 OUT = Path("data/extracts")
@@ -45,17 +45,9 @@ def write(out, root: Path) -> None:
     out.row_counts.to_csv(meta / "row_counts.csv")
 
 
-def volume_path() -> str:
-    """Landing volume from the deployed bundle (dev mode prefixes the schema per user)."""
-    summary = subprocess.run(["databricks", "bundle", "summary", "--output", "json"],
-                             check=True, capture_output=True, text=True).stdout
-    full_name = json.loads(summary)["resources"]["volumes"]["landing"]["id"]
-    # The replay job copies one date at a time from staging into the pipeline's inbox.
-    return "dbfs:/Volumes/" + full_name.replace(".", "/") + "/staging"
-
-
 def upload(root: Path) -> str:
-    target = volume_path()
+    # The replay job copies one date at a time from staging into the pipeline's inbox.
+    target = landing_volume() + "/staging"
     # Replace the whole folder so a rerun leaves no stale partitions behind.
     subprocess.run(["databricks", "fs", "rm", "-r", target], check=False, capture_output=True)
     subprocess.run(["databricks", "fs", "mkdir", target], check=True)

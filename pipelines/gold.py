@@ -8,7 +8,9 @@ from pyspark import pipelines as dp
 from pyspark.sql import Column, DataFrame, Window
 from pyspark.sql import functions as F
 
+MATCHER_OUTPUT = spark.conf.get("matcher_output")  # noqa: F821
 SEVERITY_TIER = {"High": 3, "Medium": 2, "Low": 1}
+R01_RECENT_PAYMENT_DAYS = 90
 R02_CHANGE_WINDOW_DAYS = 7  # second bank change within this many days of the first
 R02_LOOKBACK_DAYS = 30  # a completed pattern stays flagged this long
 R04_DORMANT_MONTHS = 18
@@ -142,7 +144,53 @@ def rule_r07_unconfirmed_change_items_due():
     return exceptions(hits, "R07", "High", detail, evidence, bukrs=F.col("BUKRS"))
 
 
-RULE_VIEWS = ["rule_r02_change_pay_revert", "rule_r03_shared_bank",
+@dp.materialized_view(comment="Matcher output: candidate duplicate vendor pairs with scores. "
+                              "above_threshold marks pairs at or above the tuned threshold")
+@dp.expect_or_fail("pair_ordered", "LIFNR_A < LIFNR_B")
+def gold_duplicate_candidates():
+    names = read("silver_vendor").select("extract_date", "LIFNR", "NAME1")
+    latest = names.agg(F.max("extract_date").alias("extract_date"))
+    names = names.join(latest, "extract_date").drop("extract_date")
+    cand = spark.read.parquet(MATCHER_OUTPUT)  # noqa: F821
+    return (cand.join(names.withColumnsRenamed({"LIFNR": "LIFNR_A", "NAME1": "NAME1_A"}),
+                      "LIFNR_A", "left")
+            .join(names.withColumnsRenamed({"LIFNR": "LIFNR_B", "NAME1": "NAME1_B"}),
+                  "LIFNR_B", "left"))
+
+
+@dp.view(comment="R01 duplicate vendor. Matcher pairs at or above threshold where both vendors "
+                 "are active (LFA1 LOEVM deletion flag and SPERR posting block not set) and "
+                 "have open items or a payment in the last 90 days.")
+def rule_r01_duplicate_vendor():
+    v = read("silver_vendor").where((F.col("LOEVM") == "") & (F.col("SPERR") == ""))
+    open_items = read("silver_open_items").select("extract_date", "LIFNR").distinct()
+    paid = (extract_dates().join(read("silver_payments").select("LIFNR", "BUDAT"),
+                                 (F.col("BUDAT") <= F.col("extract_date"))
+                                 & (F.col("BUDAT") > F.date_sub("extract_date",
+                                                                R01_RECENT_PAYMENT_DAYS)))
+            .select("extract_date", "LIFNR").distinct())
+    active = (v.select("extract_date", "LIFNR", "NAME1")
+              .join(open_items.unionByName(paid).distinct(), ["extract_date", "LIFNR"]))
+    cand = read("gold_duplicate_candidates").where("above_threshold").select(
+        "LIFNR_A", "LIFNR_B", "score", "name_score", "address_score")
+    a = active.withColumnsRenamed({"LIFNR": "LIFNR_A", "NAME1": "NAME1_A"})
+    b = active.withColumnsRenamed({"LIFNR": "LIFNR_B", "NAME1": "NAME1_B"})
+    both = cand.join(a, "LIFNR_A").join(b, ["extract_date", "LIFNR_B"])
+    # One exception per vendor in the pair, each pointing at the other.
+    sides = [both.select("extract_date", F.col("LIFNR_A").alias("LIFNR"),
+                         F.col("LIFNR_B").alias("other"), F.col("NAME1_B").alias("other_name"),
+                         "score", "name_score", "address_score"),
+             both.select("extract_date", F.col("LIFNR_B").alias("LIFNR"),
+                         F.col("LIFNR_A").alias("other"), F.col("NAME1_A").alias("other_name"),
+                         "score", "name_score", "address_score")]
+    hits = sides[0].unionByName(sides[1])
+    detail = F.format_string("Possible duplicate of %s (%s), match score %.1f", "other",
+                             "other_name", "score")
+    evidence = ["other", "other_name", "score", "name_score", "address_score"]
+    return exceptions(hits, "R01", "Medium", detail, evidence, related=F.col("other"))
+
+
+RULE_VIEWS = ["rule_r01_duplicate_vendor", "rule_r02_change_pay_revert", "rule_r03_shared_bank",
               "rule_r04_dormant_not_blocked", "rule_r05_duplicate_invoice_check_off",
               "rule_r07_unconfirmed_change_items_due"]
 
