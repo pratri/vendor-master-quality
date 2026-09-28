@@ -9,7 +9,7 @@ monitoring and control testing over SAP vendor master data on Databricks.
 
 ![Streamlit demo: ranked vendor risk](docs/app_screenshot.png)
 
-**Live demo:** _add the Streamlit Community Cloud link after deploying (see [Deploy the demo](#deploy-the-demo))_ ·
+**Live demo:** [vendor-master-quality.streamlit.app](https://vendor-master-quality-afvmiyhfyy4yhg32upadql.streamlit.app/) ·
 **Evaluation:** [docs/evaluation.md](docs/evaluation.md)
 
 **Architecture:** extract replay → bronze → silver → SCD2 change history → rules and matcher → gold → Streamlit demo
