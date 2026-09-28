@@ -13,6 +13,21 @@ variables:
 workspace:
   host: https://dbc-771eb7e2-bf8c.cloud.databricks.com
 
+resources:
+  schemas:
+    vendor_mdq:
+      catalog_name: ${var.catalog}
+      name: ${var.schema}
+      comment: Vendor master data quality pipeline
+
+  volumes:
+    landing:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.vendor_mdq.name}
+      name: landing
+      volume_type: MANAGED
+      comment: Daily SAP-shaped extracts from the generator
+
 targets:
   dev:
     mode: development
