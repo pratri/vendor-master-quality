@@ -44,7 +44,9 @@ def _replace_tokens(s: str, table: dict[str, str]) -> str:
 def normalize_name(name: str | None) -> str:
     s = _replace_tokens(_clean(name), _NAME_TOKENS)
     s = s.replace("&", " & ")
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    # "WHITESTONE GROUP INC THE" and "THE WHITESTONE GROUP INC" are the same name
+    return re.sub(r"^THE |(?<= )THE$", "", s).strip()
 
 
 def normalize_address(addr: str | None) -> str:

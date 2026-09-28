@@ -63,7 +63,7 @@ def test_row_counts(out, cfg):
         assert len(t["LFA1"]) == n_all
         assert len(t["LFBK"]) == n_all  # one current bank row per vendor
         assert len(t["DFKKBPTAXNUM"]) == N_VENDORS
-        assert len(t["CVI_VEND_LINK"]) == n_all
+        assert len(t["CVI_VEND_LINK"]) == n_all - cfg.dq_defects_per_type  # planted gaps
         acd = t["ACDOCA"]
         assert (acd.RLDNR == "0L").sum() == (acd.RLDNR == "2L").sum()
         if d.weekday() >= 5:
@@ -142,6 +142,19 @@ def test_future_dated_bank_rows_not_on_vendor_yet(out):
     pytest.fail("no future-dated BUT0BK rows generated")
 
 
+def test_planted_defects_are_in_manifest_and_data(out, cfg):
+    n = cfg.dq_defects_per_type
+    dq = out.manifest[out.manifest.rule_id == "DQ"]
+    assert dq.groupby("variant").size().eq(n).all() and dq.variant.nunique() == 6
+    # Defects sit on vendors no rule touches, so rule reconciliation stays exact.
+    ruled = set(out.manifest[out.manifest.rule_id != "DQ"].LIFNR)
+    assert not set(dq.LIFNR) & ruled
+    last = out.extracts[max(out.extracts)]
+    assert (last["LFBK"].BANKN == "").sum() == n
+    assert (last["LFB1"].ZTERM == "Z999").sum() == n
+    assert (latest_ledger(out).BLART == "ZZ").sum() == 2 * 2 * n  # K+S lines, two ledgers
+
+
 def test_initial_load_day_has_no_master_changes(out, cfg):
     # The SCD2 baseline is the day 1 snapshot, so change documents must start on day 2.
     assert out.extracts[cfg.start]["CDPOS"].empty
@@ -164,6 +177,7 @@ def test_empty_days_keep_string_columns(tmp_path, out, cfg):
 def test_identifiers_are_obviously_fake(out, cfg):
     t = out.extracts[cfg.start]
     assert t["LFBK"].BANKL.str.startswith("000").all()
-    assert t["LFBK"].BANKN.str.startswith("9990").all()
+    filled = t["LFBK"][t["LFBK"].BANKN != ""]
+    assert filled.BANKN.str.startswith("9990").all()
     assert t["DFKKBPTAXNUM"].TAXNUM.str.startswith("00-").all()
     assert "uei" not in out.key_map.columns

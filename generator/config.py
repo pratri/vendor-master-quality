@@ -35,4 +35,5 @@ class Config:
     employees: int = 150
     second_cc_share: float = 0.5
     third_cc_share: float = 0.2
+    dq_defects_per_type: int = 3
     rates: Rates = field(default_factory=Rates)

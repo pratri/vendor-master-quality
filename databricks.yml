@@ -10,6 +10,9 @@ variables:
     default: workspace
   schema:
     default: vendor_mdq
+  initial_load_date:
+    description: First extract_date; its snapshot is the SCD2 baseline. Must equal the generator start.
+    default: "2026-09-01"
 
 workspace:
   host: https://dbc-771eb7e2-bf8c.cloud.databricks.com

@@ -444,6 +444,63 @@ class Simulator:
         self.changes.sort(key=lambda c: (c.ts, c.objectclas != "BUPA_BUP", c.objectid))
         for i, c in enumerate(self.changes, start=1):
             c.changenr = f"{500000 + i:010d}"
+        # Vendors no rule or change touches; data quality defects are planted on these.
+        self.untouched = [x for x in pool if self.mode[x] == "recent"]
+
+    def plant_defects(self) -> None:
+        """A few deliberate data quality defects so the silver expectations have work to do."""
+        n = self.cfg.dq_defects_per_type
+        pool = self.untouched
+        adrc_of = {r["ADDRNUMBER"]: r for r in self.adrc}
+
+        for _ in range(n):  # drop: bank_key_present
+            lifnr = pool.pop()
+            key = self.lfbk_key[lifnr]
+            row = self.lfbk.pop(key)
+            row["BANKN"] = ""
+            self.lfbk_key[lifnr] = (*key[:3], "")
+            self.lfbk[self.lfbk_key[lifnr]] = row
+            self.but0bk[(self.partner_of[lifnr], "0001")]["BANKN"] = ""
+            self._add("DQ", "bank_key_present", lifnr, True, detail="bank account number blank")
+        for _ in range(n):  # warn: routing_number_9_digits
+            lifnr = pool.pop()
+            key = self.lfbk_key[lifnr]
+            row = self.lfbk.pop(key)
+            row["BANKL"] = key[2][:8]
+            self.lfbk_key[lifnr] = (key[0], key[1], row["BANKL"], key[3])
+            self.lfbk[self.lfbk_key[lifnr]] = row
+            self.but0bk[(self.partner_of[lifnr], "0001")]["BANKL"] = row["BANKL"]
+            self._add("DQ", "routing_number_9_digits", lifnr, True, detail="8-digit routing")
+        for _ in range(n):  # warn: known_payment_terms
+            lifnr = pool.pop()
+            self.lfb1[(lifnr, "1000")]["ZTERM"] = "Z999"
+            self._add("DQ", "known_payment_terms", lifnr, True, bukrs="1000",
+                      detail="payment terms key not configured")
+        missing_cvi = {pool.pop() for _ in range(n)}  # warn: has_business_partner
+        self.cvi = [r for r in self.cvi if r["VENDOR"] not in missing_cvi]
+        for lifnr in sorted(missing_cvi):
+            self._add("DQ", "has_business_partner", lifnr, True, detail="CVI link missing")
+        for _ in range(n):  # warn: us_address
+            lifnr = pool.pop()
+            adrc_of[self.lfa1[lifnr]["ADRNR"]]["COUNTRY"] = "CA"
+            self._add("DQ", "us_address", lifnr, True, detail="address country CA")
+
+        junk = []  # drop: known_doc_type
+        for i in range(n):
+            lifnr = pool.pop()
+            d = self.event_days[i % len(self.event_days)]
+            base = dict(RBUKRS="1000", BELNR=f"{1990000000 + i + 1:010d}", LIFNR=lifnr,
+                        BLART="ZZ", _post=d, NETDT="", _clear=None, AUGBL="",
+                        GJAHR=d.strftime("%Y"), BUDAT=dats(d), AUGDT_final="", RHCUR="USD")
+            junk.append({**base, "DOCLN": "000001", "KOART": "K", "RACCT": RECON_ACCOUNT,
+                         "HSL": "-500.00"})
+            junk.append({**base, "DOCLN": "000002", "KOART": "S", "RACCT": EXPENSE_ACCOUNT,
+                         "HSL": "500.00"})
+            self._add("DQ", "known_doc_type", lifnr, True, bukrs="1000",
+                      event_date=d, detail="document type ZZ")
+        self.ledger = (pd.concat([self.ledger, pd.DataFrame(junk)], ignore_index=True)
+                       .sort_values(["RBUKRS", "GJAHR", "BELNR", "DOCLN"])
+                       .reset_index(drop=True))
 
     # ---------- journal ----------
 
@@ -634,6 +691,7 @@ class Simulator:
         self.build_master()
         self.plan()
         self.build_journal()
+        self.plant_defects()
         extracts = self.emit()
         counts = pd.DataFrame({dats(d): {t: len(df) for t, df in tabs.items()}
                                for d, tabs in extracts.items()})

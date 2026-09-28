@@ -71,11 +71,11 @@ Modeling rules:
 
 ## Architecture
 
-1. **Extract replay.** The generator writes N days (default 10) of daily extracts partitioned by `extract_date`. Each day includes full master data snapshots plus that day's journal lines and change documents. The pipeline processes each date idempotently: rerunning a date produces identical output.
+1. **Extract replay.** The generator writes N days (default 10) of daily extracts partitioned by `extract_date`. Each day includes full master data snapshots plus that day's journal lines and change documents. Day 1 is the initial load: it carries journal history but no master data changes, and its snapshot is the SCD2 baseline (`initial_load_date` bundle variable, must equal the generator start). The pipeline processes each date idempotently: rerunning a date produces identical output. The generator also plants a few data quality defects (recorded in the manifest as rule `DQ`) so the silver expectations visibly warn and drop.
 2. **Bronze.** Raw SAP-shaped tables, loaded as is, with `extract_date` and load metadata columns.
 3. **Silver.** Conformed and typed tables: vendor (LFA1 joined to BP through CVI), vendor company code, vendor bank, address, open items, payments. Expectations enforce keys, not-null and accepted values.
-4. **Change history.** Build a change feed from CDPOS rows (TABNAME in LFBK, LFA1, LFB1, BUT0BK) and apply it with AUTO CDC as SCD type 2 into `dim_vendor_bank_scd2` and `dim_vendor_controls_scd2`, sequenced by UDATE plus UTIME and CHANGENR.
-5. **Gold.** `exceptions` (one row per rule hit, with rule_id, severity, vendor, company code, evidence columns), `vendor_risk` (ranked), `duplicate_candidates` (matcher output), `run_history` (flag counts per rule per extract_date).
+4. **Change history.** Build a change feed from CDPOS rows (TABNAME in LFBK, LFA1, LFB1) plus the initial load snapshot, and apply it with AUTO CDC as SCD type 2 into `dim_vendor_bank_scd2` and `dim_vendor_controls_scd2`, sequenced by UDATE plus UTIME and CHANGENR. Bank history comes from vendor-side LFBK changes: CVI only changes LFBK when a BUT0BK row becomes valid, so future-dated BP bank rows are never applied early. BUT0BK change documents (object class BUPA_BUP) stay in bronze for audit.
+5. **Gold.** Table names carry a `gold_` prefix so the idempotency check covers them: `gold_exceptions` (one row per rule hit, with rule_id, severity, vendor, company code, evidence columns), `gold_vendor_risk` (ranked), `gold_duplicate_candidates` (matcher output), `gold_run_history` (flag counts per rule per extract_date).
 
 ## Control rules (seven defined, R06 deferred for the prototype)
 
@@ -85,7 +85,7 @@ Modeling rules:
 4. **R04 Dormant but not blocked.** No postings for 18 months or more, and none of SPERR, SPERZ or LOEVM set.
 5. **R05 Duplicate invoice check disabled.** LFB1-REPRF is blank.
 6. **R06 Alternative payee or one-time vendor exposure.** (Deferred.) LNRZA or LNRZB populated, or XZEMP set, or a one-time vendor (XCPDK) with repeat payments.
-7. **R07 Unconfirmed sensitive change with open items.** CONFS is set and the vendor has open items due within the next payment run window.
+7. **R07 Unconfirmed sensitive change with open items.** CONFS is set and the vendor has open items due within the next payment run window, defined as NETDT on or before extract_date + 7 days (overdue items count).
 
 ## Risk score
 

@@ -15,4 +15,4 @@ resources:
             path: ./scd2.py
       configuration:
         inbox: /Volumes/${var.catalog}/${resources.schemas.vendor_mdq.name}/landing/inbox
-        initial_load_date: "2026-09-01"
+        initial_load_date: ${var.initial_load_date}

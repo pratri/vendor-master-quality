@@ -14,6 +14,9 @@ from matching.normalize import normalize_address, normalize_name, zip5
         ("Blue  River,   LLC", "BLUE RIVER LLC"),
         ("Northwind Corporation", "NORTHWIND CORP"),
         ("Contoso Limited", "CONTOSO LTD"),
+        ("The Whitestone Group, Inc.", "WHITESTONE GROUP INC"),
+        ("WHITESTONE GROUP, INC., THE", "WHITESTONE GROUP INC"),
+        ("Theater Supply Co", "THEATER SUPPLY CO"),
         (None, ""),
     ],
 )
