@@ -13,6 +13,8 @@ resources:
             path: ./silver.py
         - file:
             path: ./scd2.py
+        - file:
+            path: ./gold.py
       configuration:
         inbox: /Volumes/${var.catalog}/${resources.schemas.vendor_mdq.name}/landing/inbox
         initial_load_date: ${var.initial_load_date}

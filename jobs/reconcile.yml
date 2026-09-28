@@ -1,0 +1,17 @@
+resources:
+  jobs:
+    reconcile:
+      name: vendor_mdq_reconcile
+      description: Compare gold exceptions and silver data quality with the generator manifest.
+      tasks:
+        - task_key: reconcile
+          environment_key: default
+          spark_python_task:
+            python_file: ./reconcile.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.vendor_mdq.name}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"

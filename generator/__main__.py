@@ -60,7 +60,7 @@ def upload(root: Path) -> str:
     subprocess.run(["databricks", "fs", "rm", "-r", target], check=False, capture_output=True)
     subprocess.run(["databricks", "fs", "mkdir", target], check=True)
     subprocess.run(["databricks", "fs", "cp", "-r", str(root), target, "--overwrite"],
-                   check=True)
+                   check=True, capture_output=True)
     return target
 
 
