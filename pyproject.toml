@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-app = ["streamlit==1.64.0"]
+app = ["altair==6.3.0", "streamlit==1.64.0"]
 dev = ["matplotlib==3.11.2", "pytest==9.1.1", "ruff==0.16.9"]
 
 [build-system]

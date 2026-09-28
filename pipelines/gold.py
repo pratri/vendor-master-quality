@@ -63,7 +63,8 @@ def rule_r02_change_pay_revert():
         completed >= F.date_sub("extract_date", R02_LOOKBACK_DAYS)))
     detail = F.format_string("Bank changed %s by %s, paid %s on %s, changed again %s by %s",
                              F.date_format("start_ts", "yyyy-MM-dd HH:mm"), "changed_by",
-                             F.format_number("payment_amount", 2), "payment_date",
+                             F.format_number("payment_amount", 2),
+                             F.date_format("payment_date", "yyyy-MM-dd"),
                              F.date_format("next_ts", "yyyy-MM-dd HH:mm"), "next_by")
     evidence = [F.col("start_ts").alias("first_change_ts"), F.col("changed_by").alias("first_by"),
                 F.col("BANKN").alias("temporary_bankn"), "payment_belnr", "payment_date",
@@ -111,7 +112,7 @@ def rule_r04_dormant_not_blocked():
                    & (F.col("SPERR") == "") & (F.col("SPERZ") == "") & (F.col("LOEVM") == "")))
     months = F.floor(F.months_between("extract_date", "last_activity")).cast("int")
     detail = F.format_string("No postings since %s (%d months); SPERR, SPERZ, LOEVM not set%s",
-                             "last_activity", months,
+                             F.date_format("last_activity", "yyyy-MM-dd"), months,
                              F.when(F.col("SPERM") != "", F.lit(", only SPERM set"))
                              .otherwise(F.lit("")))
     evidence = ["last_posting", "last_activity", months.alias("months_dormant"), "SPERM"]
@@ -138,8 +139,9 @@ def rule_r07_unconfirmed_change_items_due():
                 F.count("*").alias("items_due")))
     hits = (due.join(cc, ["extract_date", "LIFNR", "BUKRS"]).join(v, ["extract_date", "LIFNR"])
             .where((F.col("lfa1_confs") != "") | (F.col("lfb1_confs") != "")))
-    detail = F.format_string("Unconfirmed sensitive change; %d items (%s) due by %s",
-                             "items_due", F.format_number("amount_due", 2), "earliest_due")
+    detail = F.format_string("Unconfirmed sensitive change; %d open item(s) (%s) due by %s",
+                             "items_due", F.format_number("amount_due", 2),
+                             F.date_format("earliest_due", "yyyy-MM-dd"))
     evidence = ["lfa1_confs", "lfb1_confs", "items_due", "amount_due", "earliest_due"]
     return exceptions(hits, "R07", "High", detail, evidence, bukrs=F.col("BUKRS"))
 

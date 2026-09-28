@@ -1,0 +1,17 @@
+resources:
+  jobs:
+    export_demo:
+      name: vendor_mdq_export_demo
+      description: Write gold tables and drill-down slices to Parquet for the Streamlit demo.
+      tasks:
+        - task_key: export
+          environment_key: default
+          spark_python_task:
+            python_file: ./export_demo.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.vendor_mdq.name}
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"

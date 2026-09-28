@@ -1,0 +1,55 @@
+{
+  "vendors": 20150,
+  "positive_pairs": 2945,
+  "blocking": {
+    "pairs_area": 749281,
+    "pairs_first_token": 154695,
+    "pairs_total": 895497,
+    "skipped_blocks": [],
+    "positives_in_candidates": 2927,
+    "blocking_recall": 0.9939
+  },
+  "labels_in_candidates": {
+    "non_match": 891655,
+    "match": 2927,
+    "related": 915
+  },
+  "chosen": {
+    "name_scorer": "WRatio",
+    "name_weight": 0.9,
+    "threshold": 91,
+    "tuned_on": "dev fold"
+  },
+  "test": {
+    "threshold": 91,
+    "tp": 1301,
+    "fp": 372,
+    "precision": 0.7776,
+    "recall": 0.8645,
+    "f1": 0.8188
+  },
+  "dev": {
+    "threshold": 91,
+    "tp": 1266,
+    "fp": 343,
+    "precision": 0.7868,
+    "recall": 0.8792,
+    "f1": 0.8304
+  },
+  "baseline_token_set_ratio": {
+    "name_weight": 0.9,
+    "test": {
+      "threshold": 91,
+      "tp": 1327,
+      "fp": 585,
+      "precision": 0.694,
+      "recall": 0.8817,
+      "f1": 0.7767
+    }
+  },
+  "test_false_positives_same_name_different_uei": 343,
+  "related_pairs": {
+    "in_candidates": 915,
+    "above_threshold": 199
+  }
+}

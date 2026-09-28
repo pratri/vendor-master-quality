@@ -19,3 +19,6 @@ data/extracts/
 .env
 .streamlit/secrets.toml
 *.pem
+
+# Local tooling
+.claude/
