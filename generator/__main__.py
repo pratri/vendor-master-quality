@@ -2,7 +2,7 @@
 
 Usage:
     python -m generator --days 10
-    python -m generator --days 10 --upload
+    python -m generator --days 10 --upload   (to <landing volume>/staging)
 
 Layout (table first, so each bronze table reads one folder):
     data/extracts/<TABLE>/extract_date=YYYY-MM-DD/<TABLE>.parquet
@@ -17,6 +17,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from generator.config import Config
 from generator.simulate import Simulator
@@ -32,7 +34,10 @@ def write(out, root: Path) -> None:
         for name, df in tables.items():
             path = root / name / f"extract_date={d.isoformat()}"
             path.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(path / f"{name}.parquet", index=False)
+            # SAP extracts are character data; an explicit schema keeps empty days typed.
+            schema = pa.schema([(c, pa.string()) for c in df.columns])
+            pq.write_table(pa.Table.from_pandas(df, schema=schema, preserve_index=False),
+                           path / f"{name}.parquet")
     meta = root / "_meta"
     meta.mkdir(parents=True, exist_ok=True)
     out.manifest.to_parquet(meta / "manifest.parquet", index=False)
@@ -45,7 +50,8 @@ def volume_path() -> str:
     summary = subprocess.run(["databricks", "bundle", "summary", "--output", "json"],
                              check=True, capture_output=True, text=True).stdout
     full_name = json.loads(summary)["resources"]["volumes"]["landing"]["id"]
-    return "dbfs:/Volumes/" + full_name.replace(".", "/") + "/extracts"
+    # The replay job copies one date at a time from staging into the pipeline's inbox.
+    return "dbfs:/Volumes/" + full_name.replace(".", "/") + "/staging"
 
 
 def upload(root: Path) -> str:

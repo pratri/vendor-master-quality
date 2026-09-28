@@ -3,6 +3,7 @@ bundle:
 
 include:
   - jobs/*.yml
+  - pipelines/*.yml
 
 variables:
   catalog:

@@ -1,0 +1,18 @@
+resources:
+  pipelines:
+    vendor_mdq_pipeline:
+      name: vendor_mdq_pipeline
+      catalog: ${var.catalog}
+      schema: ${resources.schemas.vendor_mdq.name}
+      serverless: true
+      channel: CURRENT
+      libraries:
+        - file:
+            path: ./bronze.py
+        - file:
+            path: ./silver.py
+        - file:
+            path: ./scd2.py
+      configuration:
+        inbox: /Volumes/${var.catalog}/${resources.schemas.vendor_mdq.name}/landing/inbox
+        initial_load_date: "2026-09-01"

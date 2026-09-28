@@ -142,6 +142,25 @@ def test_future_dated_bank_rows_not_on_vendor_yet(out):
     pytest.fail("no future-dated BUT0BK rows generated")
 
 
+def test_initial_load_day_has_no_master_changes(out, cfg):
+    # The SCD2 baseline is the day 1 snapshot, so change documents must start on day 2.
+    assert out.extracts[cfg.start]["CDPOS"].empty
+    assert not stacked(out, "CDHDR").empty
+
+
+def test_empty_days_keep_string_columns(tmp_path, out, cfg):
+    import pyarrow.parquet as pq
+
+    from generator.__main__ import write
+
+    write(out, tmp_path)
+    weekend = next(d for d in out.extracts if d.weekday() == 5)
+    f = tmp_path / "ACDOCA" / f"extract_date={weekend.isoformat()}" / "ACDOCA.parquet"
+    schema = pq.read_schema(f)
+    assert pq.read_metadata(f).num_rows == 0
+    assert all(str(t) == "string" for t in schema.types)
+
+
 def test_identifiers_are_obviously_fake(out, cfg):
     t = out.extracts[cfg.start]
     assert t["LFBK"].BANKL.str.startswith("000").all()

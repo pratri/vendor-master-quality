@@ -108,6 +108,9 @@ class Simulator:
         self.end = self.days[-1]
         self.weekdays = [d for d in self.days if d.weekday() < 5]
         self.runs_window = [d for d in self.days if d.weekday() in PAY_RUN_WEEKDAYS]
+        # Day 1 is the initial load, so master data changes start on day 2.
+        self.event_days = [d for d in self.weekdays if d > cfg.start]
+        self.event_runs = [d for d in self.runs_window if d > cfg.start]
         self.vendors = vendors.sort_values("vendor_id").reset_index(drop=True)
         self.manifest: list[dict] = []
         self.changes: list[Change] = []
@@ -353,7 +356,7 @@ class Simulator:
         for i in rng.permutation(len(vcc))[:n_r05]:
             lifnr, bukrs = vcc[i]
             if rng.random() < r.r05_changed_in_window_share:
-                d = self.weekdays[int(rng.integers(len(self.weekdays)))]
+                d = self.event_days[int(rng.integers(len(self.event_days)))]
                 self._field_change(lifnr, self._at(d, int(rng.integers(8, 17)),
                                                    int(rng.integers(60))),
                                    "LFB1", (lifnr, bukrs), "REPRF", "X", "")
@@ -366,13 +369,13 @@ class Simulator:
         for lifnr in take(r.r02_change_pay_revert):
             original = self.cur_bank[lifnr]
             if rng.random() < r.r02_same_day_share:
-                run = self.runs_window[int(rng.integers(len(self.runs_window)))]
+                run = self.event_runs[int(rng.integers(len(self.event_runs)))]
                 change_at, revert_at = self._at(run, 8, 15), self._at(run, 16, 45)
                 variant = "same_day"
             else:
-                run = self.runs_window[int(rng.integers(1, len(self.runs_window)))]
+                run = self.event_runs[int(rng.integers(len(self.event_runs)))]
                 prev = self._prev_run(run)
-                gap = [d for d in self.weekdays if prev < d < run]
+                gap = [d for d in self.event_days if prev < d < run]
                 change_day = gap[int(rng.integers(len(gap)))] if gap else prev
                 change_at = self._at(change_day, 10)
                 revert_day = run + timedelta(days=1)
@@ -390,7 +393,7 @@ class Simulator:
                       detail=f"pay {dats(run)} revert {dats(revert_at.date())}")
 
         # Decoy: change and revert on a non-run day, no payment in between.
-        quiet = [d for d in self.weekdays if d.weekday() not in PAY_RUN_WEEKDAYS]
+        quiet = [d for d in self.event_days if d.weekday() not in PAY_RUN_WEEKDAYS]
         for lifnr in take(r.d02_change_revert_no_payment):
             d = quiet[int(rng.integers(len(quiet)))]
             original = self.cur_bank[lifnr]
@@ -401,7 +404,7 @@ class Simulator:
 
         # R07 unconfirmed bank change while an item is due soon. CONFS blocks payment.
         for lifnr in take(r.r07_unconfirmed_open_items):
-            d = self.weekdays[int(rng.integers(1, len(self.weekdays) - 1))]
+            d = self.event_days[int(rng.integers(len(self.event_days) - 1))]
             ts = self._at(d, int(rng.integers(8, 11)))
             first_ok = self._prev_run(d) + timedelta(days=PAY_AHEAD_DAYS + 1)
             if d.weekday() in PAY_RUN_WEEKDAYS:  # change before noon beats that day's run
@@ -413,14 +416,14 @@ class Simulator:
 
         # Decoy: unconfirmed change on a vendor with nothing open.
         for lifnr in take(r.d07_unconfirmed_no_open_items):
-            d = self.weekdays[int(rng.integers(1, len(self.weekdays)))]
+            d = self.event_days[int(rng.integers(len(self.event_days)))]
             self.mode[lifnr] = "quiet"
             self._bank_change(lifnr, self._at(d, 11), self._new_bank(), self._clerk(), None)
             self._add("R07", "decoy_no_open_items", lifnr, False, event_date=d)
 
         # Background: legitimate bank changes, confirmed the same day; some future-dated.
         for lifnr in take(r.bank_change_legit):
-            d = self.weekdays[int(rng.integers(len(self.weekdays)))]
+            d = self.event_days[int(rng.integers(len(self.event_days)))]
             ts = self._at(d, int(rng.integers(8, 15)), int(rng.integers(60)))
             vf = None
             if rng.random() < r.bank_change_future_share:
@@ -432,8 +435,8 @@ class Simulator:
 
         # Background: temporary payment blocks, set and lifted inside the window.
         for lifnr in take(r.temp_payment_block):
-            i = int(rng.integers(len(self.weekdays) - 2))
-            on, off = self.weekdays[i], self.weekdays[min(i + 2, len(self.weekdays) - 1)]
+            i = int(rng.integers(len(self.event_days) - 2))
+            on, off = self.event_days[i], self.event_days[min(i + 2, len(self.event_days) - 1)]
             self._field_change(lifnr, self._at(on, 10), "LFA1", (lifnr,), "SPERZ", "", "X")
             self._field_change(lifnr, self._at(off, 15), "LFA1", (lifnr,), "SPERZ", "X", "")
             self._add("BASE", "temp_payment_block", lifnr, False, event_date=on)

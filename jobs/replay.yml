@@ -1,0 +1,45 @@
+resources:
+  jobs:
+    replay:
+      name: vendor_mdq_replay
+      description: Land each extract date in the inbox and run the pipeline once per date.
+      parameters:
+        - name: dates
+          default: all
+      tasks:
+        - task_key: replay
+          environment_key: default
+          spark_python_task:
+            python_file: ./replay.py
+            parameters:
+              - --mode=replay
+              - --dates={{job.parameters.dates}}
+              - --reset
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.vendor_mdq.name}
+              - --pipeline-id=${resources.pipelines.vendor_mdq_pipeline.id}
+      environments: &env
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - databricks-sdk==0.143.0
+
+    idempotency_check:
+      name: vendor_mdq_idempotency_check
+      description: Fingerprint outputs, rerun one extract date, fingerprint again and compare.
+      parameters:
+        - name: date
+          default: "2026-09-05"
+      tasks:
+        - task_key: check
+          environment_key: default
+          spark_python_task:
+            python_file: ./replay.py
+            parameters:
+              - --mode=idempotency
+              - --dates={{job.parameters.date}}
+              - --catalog=${var.catalog}
+              - --schema=${resources.schemas.vendor_mdq.name}
+              - --pipeline-id=${resources.pipelines.vendor_mdq_pipeline.id}
+      environments: *env
