@@ -97,7 +97,7 @@ Modeling rules:
 2. **Blocking:** state plus first three digits of zip, and a second pass on the first token of the normalized name. Report how many candidate pairs blocking produces and what recall it loses.
 3. **Baseline:** rapidfuzz token_set_ratio on name, plus address similarity, with a tuned threshold.
 4. **Labels:** positive pairs are two vendor records sharing a UEI. Negative pairs are candidate pairs from blocking with different UEIs and different parent UEIs. Same-parent pairs are a separate "related" class. Never sample random pairs for evaluation, because nearly all are non-matches and precision becomes meaningless.
-5. **Report:** precision, recall and F1 at the chosen threshold, a precision-recall curve, and a short error analysis with five false positives and five false negatives and why they happened. Note that the sample oversamples multi-spelling UEIs, so precision is higher than it would be on a natural vendor population.
+5. **Report:** precision, recall and F1 at the chosen threshold, a precision-recall curve, and a short error analysis with five false positives and five false negatives and why they happened. The evaluation runs on the agency's full vendor population (Interior FY2025-2026, 20,150 rows), with no oversampling.
 6. Splink and hand-labeled hard cases are deferred.
 
 ## Engineering standards
