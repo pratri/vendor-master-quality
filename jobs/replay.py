@@ -2,6 +2,8 @@
 
 replay:      for each date, copy its files from staging into the inbox, then run one pipeline
              update. --reset empties the inbox and full-refreshes on the first date.
+             --single-update lands every date first and runs one update: same result (silver
+             is keyed by extract_date and AUTO CDC orders by sequence), much less overhead.
 idempotency: fingerprint every silver/dim/gold table, land the date again, run the pipeline,
              fingerprint again and fail if anything differs.
 """
@@ -60,7 +62,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--mode", choices=["replay", "idempotency"], required=True)
     p.add_argument("--dates", default="all")
-    p.add_argument("--reset", action="store_true")
+    p.add_argument("--reset", default="false")
+    p.add_argument("--single-update", default="false")
     p.add_argument("--catalog", required=True)
     p.add_argument("--schema", required=True)
     p.add_argument("--pipeline-id", required=True)
@@ -71,14 +74,22 @@ def main() -> None:
     dates = (sorted(x.name.split("=")[1] for x in (staging / "LFA1").iterdir())
              if a.dates == "all" else a.dates.split(","))
     w = WorkspaceClient()
+    reset, single = a.reset.lower() == "true", a.single_update.lower() == "true"
 
     if a.mode == "replay":
-        if a.reset and inbox.exists():
+        if reset and inbox.exists():
             shutil.rmtree(inbox)
+        t0 = time.time()
+        if single:
+            for d in dates:
+                land(staging, inbox, d)
+            run_pipeline(w, a.pipeline_id, full_refresh=reset)
+            print(f"{len(dates)} dates in one update: {time.time() - t0:.0f}s", flush=True)
+            return
         for i, d in enumerate(dates):
             t0 = time.time()
             land(staging, inbox, d)
-            run_pipeline(w, a.pipeline_id, full_refresh=a.reset and i == 0)
+            run_pipeline(w, a.pipeline_id, full_refresh=reset and i == 0)
             print(f"{d}: pipeline update completed in {time.time() - t0:.0f}s", flush=True)
         return
 
@@ -88,10 +99,10 @@ def main() -> None:
         land(staging, inbox, d)
         run_pipeline(w, a.pipeline_id)
     after = fingerprint(spark, a.catalog, a.schema)
-    print(f"{'table':<32}{'rows before':>12}{'rows after':>12}  identical")
+    print(f"{'table':<30}{'rows before':>12}{'rows after':>12}  {'hash':<22} identical")
     for t in sorted(before):
         same = before[t] == after.get(t)
-        print(f"{t:<32}{before[t][0]:>12}{after.get(t, ('-',))[0]:>12}  {same}")
+        print(f"{t:<30}{before[t][0]:>12}{after.get(t, ('-',))[0]:>12}  {before[t][1]:<22} {same}")
     if before != after:
         raise SystemExit(f"Rerunning {dates} changed the output")
     print(f"Rerunning {', '.join(dates)} left all {len(before)} output tables identical.")

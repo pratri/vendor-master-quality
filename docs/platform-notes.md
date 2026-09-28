@@ -16,3 +16,17 @@ Gotchas:
 - Pipeline code uses the current `from pyspark import pipelines as dp` API (`dp.create_auto_cdc_flow`), not the older `import dlt`.
 - `sequence_by=F.struct("UDATE", "UTIME", "CHANGENR")` works for ordering change documents.
 - `bundle destroy` also drops the tables a pipeline owns.
+- Bundle resource keys must be unique across types (a schema and a pipeline cannot both be `vendor_mdq`).
+- Dev mode prefixes the schema per user (`dev_pranteja_vendor_mdq`); read paths from `bundle summary`.
+- PowerShell 5.1 writes UTF-8 with a BOM, which breaks `pyproject.toml`. Edit files with an editor or Python.
+
+## Replay and idempotency (2026-09-28)
+
+| Run | Time | Result |
+|---|---|---|
+| Replay, one pipeline update per date (10 updates) | 26 min | all 10 dates succeeded |
+| Rerun 2026-09-05 (`vendor_mdq_idempotency_check`) | 2.5 min | all 10 silver/dim tables identical (row count and hash) |
+| Replay, all dates in one update (`single_update=true`) | 3 min | same hashes as the 10-update replay |
+
+Most of each update is fixed serverless startup, not data. Output does not depend on how dates are
+batched: silver is keyed by extract_date and AUTO CDC orders by change time and CHANGENR.
