@@ -1,0 +1,19 @@
+bundle:
+  name: vendor_master_quality
+
+include:
+  - jobs/*.yml
+
+variables:
+  catalog:
+    default: workspace
+  schema:
+    default: vendor_mdq
+
+workspace:
+  host: https://dbc-771eb7e2-bf8c.cloud.databricks.com
+
+targets:
+  dev:
+    mode: development
+    default: true

@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Databricks bundle state
+.databricks/
+
+# Raw downloads and generated extracts: never commit
+data/raw/
+data/extracts/
+*.zip
+
+# Secrets
+.env
+.streamlit/secrets.toml
+*.pem

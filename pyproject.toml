@@ -1,0 +1,33 @@
+[project]
+name = "vendor-master-quality"
+version = "0.1.0"
+description = "Vendor master data quality pipeline: SCD2 change history, control testing and duplicate vendor matching on Databricks"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "duckdb==1.5.6",
+    "pandas==3.0.6",
+    "pyarrow==25.0.1",
+    "rapidfuzz==3.14.6",
+    "requests==2.34.2",
+]
+
+[project.optional-dependencies]
+app = ["streamlit==1.64.0"]
+dev = ["pytest==9.1.1", "ruff==0.16.9"]
+
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["extract", "generator", "matching"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
