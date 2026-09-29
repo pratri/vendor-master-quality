@@ -231,18 +231,34 @@ with queue_tab:
     if len(r02):
         st.info(f"Start here: vendor **{r02.LIFNR.iloc[0]}** ({r02.NAME1.iloc[0]}): "
                 f"{r02.detail.iloc[0]}. Pick it below, or any row, to see the evidence.")
-    counts = shown.groupby("queue").size()
-    st.write("  ·  ".join(f"**{qn[2:]}**: {counts.get(qn, 0):,}" for qn in QUEUES))
-    view = shown.assign(rule=shown.rule_id + " " + shown.rule_id.map(RULES),
-                        queue_name=shown.queue.str[2:])
+    # One case per vendor: an analyst works the vendor, not each rule hit. The case takes the
+    # most urgent queue among its rules, and its detail line comes from that rule.
+    new_only = st.toggle("Only vendors with a new flag on this date",
+                         help="A rule first flagged the vendor on this extract date.")
+    ranked = shown.assign(new=pd.to_datetime(shown.first_flagged) > prev_day).sort_values(
+        ["queue", "tier", "exposure"], ascending=[True, False, False])
+    cases = (ranked.groupby("LIFNR", sort=False)
+             .agg(queue=("queue", "first"), severity=("severity", "first"),
+                  rules=("rule_id", lambda s: ", ".join(sorted(set(s)))),
+                  NAME1=("NAME1", "first"), detail=("detail", "first"),
+                  first_flagged=("first_flagged", "min"), new=("new", "any"),
+                  exposure=("exposure", "first"))
+             .reset_index())
+    if new_only:
+        cases = cases[cases.new]
+    cases["days_open"] = (pd.Timestamp(day) - pd.to_datetime(cases.first_flagged)).dt.days
+    counts = cases.groupby("queue").size()
+    st.write("Vendors to review: " + "  ·  ".join(f"**{qn[2:]}** {counts.get(qn, 0):,}"
+                                                   for qn in QUEUES))
+    view = cases.assign(queue_name=cases.queue.str[2:]).reset_index(drop=True)
     picked = st.dataframe(
-        view[["queue_name", "rule", "severity", "LIFNR", "NAME1", "detail", "first_flagged",
+        view[["queue_name", "rules", "severity", "LIFNR", "NAME1", "detail", "first_flagged",
               "days_open", "exposure"]],
         hide_index=True, width="stretch", height=380, on_select="rerun",
         selection_mode="single-row", key="queue_table",
         column_config={
-            "queue_name": "Queue", "rule": "Rule", "severity": "Severity", "LIFNR": "Vendor",
-            "NAME1": "Name", "detail": st.column_config.TextColumn("Detail", width="large"),
+            "queue_name": "Queue", "rules": "Rules", "severity": "Severity", "LIFNR": "Vendor",
+            "NAME1": "Name", "detail": st.column_config.TextColumn("Top issue", width="large"),
             "first_flagged": st.column_config.DateColumn("First flagged", format="YYYY-MM-DD"),
             "days_open": st.column_config.NumberColumn("Days open", width="small"),
             "exposure": st.column_config.NumberColumn("Open exposure", format="dollar"),
@@ -320,7 +336,7 @@ with history_tab:
                                            stroke="#fcfcfb", strokeWidth=2))
                  .properties(title=f"{rule} {RULES[rule]}", height=170)
                  .configure_view(stroke=None).configure_title(anchor="start", fontSize=13))
-        grid[i % 2].altair_chart(chart, use_container_width=True)
+        grid[i % 2].altair_chart(chart, width="stretch")
     with st.expander("Table view"):
         st.dataframe(rh.assign(rule=rh.rule_id + " " + rh.rule_id.map(RULES)),
                      hide_index=True, width="stretch",

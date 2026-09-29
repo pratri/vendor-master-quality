@@ -71,12 +71,14 @@ databricks bundle run export_demo             # gold -> Parquet for the demo
 | R05 Duplicate invoice check off | LFB1-REPRF blank | LFB1-REPRF | Medium |
 | R06 Alternative payee / one-time vendor | LNRZA or LNRZB set, XZEMP set, or a one-time account paid twice or more in 90 days | LFA1-LNRZA, XZEMP, XCPDK; LFB1-LNRZB; ACDOCA KZ | Medium |
 | R07 Payment will be held | Unconfirmed sensitive change (CONFS) with items due by extract date + 7 days. F110 holds these payments, so the job is to confirm or reject the change. | LFA1/LFB1-CONFS; ACDOCA NETDT, AUGBL | Medium |
-| R08 Paid soon after a bank change | A bank change (not a first setup) followed by a clearing payment within 14 days. Check the change was verified by call-back. Same-day payments count, since ACDOCA carries no payment time. | CDHDR/CDPOS on LFBK; ACDOCA BLART KZ | Medium |
+| R08 Paid soon after a bank change | A bank change (not a first setup) followed by a clearing payment within 14 days. Dual control (FK08) confirms the entry, not that the request really came from the supplier, so check it was verified by call-back. Same-day payments count, since ACDOCA carries no payment time. | CDHDR/CDPOS on LFBK; ACDOCA BLART KZ | Medium |
 
 **Priority score.** `exposure` = sum of absolute open item amounts (ACDOCA HSL, AUGBL blank) for the
 vendor. The score is exposure × the highest severity tier among its exceptions (High 3, Medium 2,
 Low 1), with no other weights. R01 dominates by volume, because the dataset holds about 2,900 real
-duplicate pairs, and dormant vendors have no exposure. So the demo opens on a **work queue**:
+duplicate pairs, and dormant vendors have no exposure. So the demo opens on a **work queue** with
+one row per vendor (all its rules together), placed by its most urgent rule, with a filter for vendors
+newly flagged that day:
 
 1. **Act before the next payment run:** R02, and shared accounts linked to an employee.
 2. **Investigate:** R07, R08, other shared accounts, R06, and duplicate pairs scoring 95 or more.
@@ -173,6 +175,10 @@ I_SupplierCompany.
 - Read CDHDR/CDPOS directly.
 - Pull F110 payment run data (REGUH/REGUP), so R02 can check the paid-to bank and the payment time.
 - Respect bank validity dates as delivered by the source (BUT0BK), including changes made after the fact.
+- Add case handling: an owner, status and decision per case, stored in a Delta table. Closed cases
+  would stay closed, and pairs reviewed as "not a duplicate" would stop coming back. The demo reads
+  exported files and has no write-back.
+- Alert the payment team about queue 1 before each F110 run.
 - Add the rules that reviewers asked for:
   - duplicate or missing tax ID
   - employee-to-vendor matching against HR data (PA0009/PA0006)
