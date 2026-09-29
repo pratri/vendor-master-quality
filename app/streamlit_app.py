@@ -48,8 +48,14 @@ GLOSSARY = {
 st.set_page_config(page_title="Vendor master data quality", layout="wide")
 
 
+# Cache keys include the data files' sizes and times, so new exported data is never served
+# stale results (Streamlit Cloud hot-reloads code on push without restarting the process).
+DATA_VERSION = str(sorted((f.name, f.stat().st_size, f.stat().st_mtime_ns)
+                          for f in DATA.glob("*")))
+
+
 @st.cache_resource
-def connection() -> duckdb.DuckDBPyConnection:
+def connection(version: str) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect()  # in-memory database; views point at the read-only Parquet files
     for f in sorted(DATA.glob("*.parquet")):
         con.execute(f"CREATE VIEW {f.stem} AS SELECT * FROM read_parquet('{f.as_posix()}')")
@@ -57,8 +63,12 @@ def connection() -> duckdb.DuckDBPyConnection:
 
 
 @st.cache_data
+def cached_query(sql: str, params: tuple, version: str) -> pd.DataFrame:
+    return connection(version).execute(sql, list(params)).df()
+
+
 def q(sql: str, params: tuple = ()) -> pd.DataFrame:
-    return connection().execute(sql, list(params)).df()
+    return cached_query(sql, params, DATA_VERSION)
 
 
 def money(x: float) -> str:
@@ -86,7 +96,7 @@ def queue_of(rule: str, severity: str, score: float | None) -> str:
 
 
 @st.cache_data
-def exceptions_on(day) -> pd.DataFrame:
+def exceptions_on(day, version: str) -> pd.DataFrame:
     """Exceptions on a date with first-flagged date, open exposure and a work queue."""
     df = q("""WITH first AS (
                 SELECT rule_id, LIFNR, BUKRS, min(extract_date) AS first_flagged
@@ -190,7 +200,7 @@ rules = f2.pills("Rules", list(RULES), default=list(RULES), selection_mode="mult
                  format_func=lambda r: r, help="\n".join(f"{k}: {v}" for k, v in RULES.items()))
 severities = f3.pills("Severity", list(TIER), default=list(TIER), selection_mode="multi")
 
-exc = exceptions_on(day)
+exc = exceptions_on(day, DATA_VERSION)
 shown = exc[exc.rule_id.isin(rules or []) & exc.severity.isin(severities or [])]
 t = metrics["test"]
 k1, k2, k3, k4 = st.columns(4)
