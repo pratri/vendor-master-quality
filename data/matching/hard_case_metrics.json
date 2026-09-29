@@ -1,0 +1,69 @@
+{
+  "labeled": 100,
+  "label_counts": {
+    "duplicate": 63,
+    "not_duplicate": 24,
+    "unsure": 7,
+    "related": 6
+  },
+  "decided_pairs": 87,
+  "agreement_with_uei_key": {
+    "labeled_duplicate_but_uei_says_different": 40,
+    "labeled_not_duplicate_but_uei_says_same": 0
+  },
+  "by_stratum": {
+    "missed_true_pair": {
+      "duplicate": 18,
+      "not_duplicate": 0,
+      "related": 1,
+      "unsure": 5
+    },
+    "near_threshold": {
+      "duplicate": 6,
+      "not_duplicate": 22,
+      "related": 5,
+      "unsure": 1
+    },
+    "related_above_threshold": {
+      "duplicate": 16,
+      "not_duplicate": 0,
+      "related": 0,
+      "unsure": 1
+    },
+    "same_name_different_uei": {
+      "duplicate": 23,
+      "not_duplicate": 2,
+      "related": 0,
+      "unsure": 0
+    }
+  },
+  "methods": {
+    "WRatio (chosen)": {
+      "threshold": 91,
+      "tp": 44,
+      "fp": 3,
+      "fn": 19,
+      "precision": 0.936,
+      "recall": 0.698,
+      "f1": 0.8
+    },
+    "token_set_ratio (baseline)": {
+      "threshold": 91,
+      "tp": 44,
+      "fp": 3,
+      "fn": 19,
+      "precision": 0.936,
+      "recall": 0.698,
+      "f1": 0.8
+    },
+    "Splink 5": {
+      "threshold": 14.75,
+      "tp": 11,
+      "fp": 0,
+      "fn": 52,
+      "precision": 1.0,
+      "recall": 0.175,
+      "f1": 0.297
+    }
+  }
+}

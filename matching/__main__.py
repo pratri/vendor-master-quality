@@ -4,8 +4,9 @@ Usage:
     python -m matching            (writes data/matching/ and docs/pr_curve.png)
     python -m matching --upload   (also sends duplicate_candidates to the landing volume)
 
-Input is the initial load snapshot: ADRC name and address, LFA1 account group (employee
-vendors are excluded). The matcher never sees the UEI; labels are joined only to evaluate.
+Input is the initial load snapshot: ADRC name and address for regular vendors (LFA1-KTOKK
+KRED; employee and one-time accounts are excluded). The matcher never sees the UEI; labels
+are joined only to evaluate.
 The name weight and threshold are tuned on half the pairs (dev) and reported on the other
 half (test).
 """
@@ -23,6 +24,7 @@ from matching.baseline import NAME_SCORERS, combine, score_pairs
 from matching.blocking import candidate_pairs
 from matching.evaluate import fold, label_pairs, positive_pairs, pr_curve
 from matching.normalize import normalize_address, normalize_name
+from matching.splink_model import splink_scores
 
 EXTRACTS = Path("data/extracts")
 LABELS = Path("data/labels/vendor_labels.parquet")
@@ -36,7 +38,7 @@ def load_vendors() -> pd.DataFrame:
     part = f"extract_date={Config().start.isoformat()}"
     lfa1 = pd.read_parquet(EXTRACTS / "LFA1" / part / "LFA1.parquet")
     adrc = pd.read_parquet(EXTRACTS / "ADRC" / part / "ADRC.parquet")
-    v = lfa1.loc[lfa1.KTOKK != "ZEMP", ["LIFNR", "ADRNR"]].merge(
+    v = lfa1.loc[lfa1.KTOKK == "KRED", ["LIFNR", "ADRNR"]].merge(
         adrc, left_on="ADRNR", right_on="ADDRNUMBER")
     address = np.where(v.STREET != "", v.STREET, "PO BOX " + v.PO_BOX)
     v = pd.DataFrame({"LIFNR": v.LIFNR, "name": v.NAME1, "address": address, "city": v.CITY1,
@@ -52,10 +54,10 @@ def load_labels(v: pd.DataFrame) -> pd.DataFrame:
     return labels[labels.LIFNR.isin(v.LIFNR)][["LIFNR", "uei", "parent_uei"]]
 
 
-def metrics_at(curve: pd.DataFrame, t: int) -> dict:
+def metrics_at(curve: pd.DataFrame, t: float) -> dict:
     r = curve[curve.threshold == t].iloc[0]
-    return {k: (round(float(r[k]), 4) if k in ("precision", "recall", "f1") else int(r[k]))
-            for k in ("threshold", "tp", "fp", "precision", "recall", "f1")}
+    out = {k: round(float(r[k]), 4) for k in ("precision", "recall", "f1")}
+    return {"threshold": t, "tp": int(r.tp), "fp": int(r.fp), **out}
 
 
 def tune(scored: pd.DataFrame, dev: np.ndarray, n_pos: int,
@@ -77,20 +79,19 @@ def plot(curves: dict[str, pd.DataFrame], chosen: dict[str, int]) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    colors = ["#2a78d6", "#eb6834"]  # categorical slots 1 and 2, validated for CVD
+    colors = ["#2a78d6", "#eb6834", "#1baf7a"]  # categorical slots 1-3, validated for CVD
+    offsets = [((-12, 12), "right"), ((12, -30), "left"), ((-12, -34), "right")]
     ink, muted, grid, axis, surface = "#0b0b0b", "#898781", "#e1e0d9", "#c3c2b7", "#fcfcfb"
     fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=150)
     fig.patch.set_facecolor(surface)
     ax.set_facecolor(surface)
-    for (name, c), color in zip(curves.items(), colors, strict=True):
+    for (name, c), color, (xy, ha) in zip(curves.items(), colors, offsets, strict=True):
         ax.plot(c.recall, c.precision, color=color, linewidth=2, label=name)
         p = c[c.threshold == chosen[name]].iloc[0]
         ax.plot(p.recall, p.precision, "o", markersize=8, color=color,
                 markeredgecolor=surface, markeredgewidth=2)
-        first = color == colors[0]  # chosen above-left of its point, baseline below-right
-        ax.annotate(f"{name}\nthreshold {chosen[name]}", (p.recall, p.precision),
-                    xytext=(-12, 12) if first else (12, -30), textcoords="offset points",
-                    ha="right" if first else "left", fontsize=8, color=ink)
+        ax.annotate(f"{name}\nthreshold {chosen[name]:g}", (p.recall, p.precision),
+                    xytext=xy, textcoords="offset points", ha=ha, fontsize=8, color=ink)
     ax.set_xlabel("Recall (share of all true duplicate pairs found)", color=muted, fontsize=9)
     ax.set_ylabel("Precision", color=muted, fontsize=9)
     ax.set_title("Duplicate vendor matcher, held-out test pairs", color=ink, fontsize=11,
@@ -143,6 +144,17 @@ def main() -> None:
               base_label: pr_curve(base[test], lab[test], n_test)}
     chosen = {main_label: t, base_label: t_base}
 
+    # Splink scores the same blocked pairs; its threshold is on match weight (log2 odds).
+    sp = scored[["LIFNR_A", "LIFNR_B"]].merge(splink_scores(v), on=["LIFNR_A", "LIFNR_B"],
+                                               how="left")
+    sw = sp.match_weight.fillna(-99).to_numpy()
+    weights = [round(x, 2) for x in np.arange(-10, 40, 0.25)]
+    sp_dev = pr_curve(sw[dev], lab[dev], n_dev, thresholds=weights)
+    t_sp = float(sp_dev.loc[sp_dev.f1.idxmax()].threshold)
+    splink_label = "Splink 5 (unsupervised)"
+    curves[splink_label] = pr_curve(sw[test], lab[test], n_test, thresholds=weights)
+    chosen[splink_label] = t_sp
+
     found = int((lab == "match").sum())
     related = lab == "related"
     names = v.name_norm.to_numpy()
@@ -161,6 +173,8 @@ def main() -> None:
         "dev": metrics_at(pr_curve(score[dev], lab[dev], n_dev), t),
         "baseline_token_set_ratio": {"name_weight": w_base,
                                      "test": metrics_at(curves[base_label], t_base)},
+        "splink": {"version": "5.0.0", "threshold_match_weight": t_sp,
+                   "test": metrics_at(curves[splink_label], t_sp)},
         "test_false_positives_same_name_different_uei": same_name_fp,
         "related_pairs": {"in_candidates": int(related.sum()),
                           "above_threshold": int((related & (score >= t)).sum())},
@@ -181,15 +195,16 @@ def main() -> None:
 
     scored["score"] = score
     scored["name_score"] = scored[f"name_{scorer}"]
-    tst = scored[test]
-    fp = tst[(tst.label == "non_match") & (tst.score >= t)].sort_values(
+    # Error analysis reads the dev fold, so looking at errors never informs choices on test.
+    dv = scored[dev]
+    fp = dv[(dv.label == "non_match") & (dv.score >= t)].sort_values(
         ["score", "LIFNR_A"], ascending=[False, True]).head(10)
-    fn_scored = tst[(tst.label == "match") & (tst.score < t)].sort_values(
+    fn_scored = dv[(dv.label == "match") & (dv.score < t)].sort_values(
         ["score", "LIFNR_A"]).head(10)
     seen = set(zip(scored.LIFNR_A, scored.LIFNR_B, strict=True))
     not_blocked = np.array([(a, b) not in seen for a, b in
                             zip(pos.LIFNR_A, pos.LIFNR_B, strict=True)])
-    missed = pos[(pos.fold == 1).to_numpy() & not_blocked].head(5)
+    missed = pos[(pos.fold == 0).to_numpy() & not_blocked].head(5)
     cols = ["LIFNR_A", "LIFNR_B", "name_score", "address_score", "score"]
     describe(fp[cols]).to_csv(OUT / "errors_false_positives.csv", index=False)
     describe(pd.concat([fn_scored[cols], missed.assign(name_score=np.nan)[["LIFNR_A",
