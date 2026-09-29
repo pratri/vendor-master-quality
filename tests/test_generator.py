@@ -58,10 +58,11 @@ def test_different_seed_changes_output(vendors, cfg, out):
 
 
 def test_row_counts(out, cfg):
-    n_all = N_VENDORS + cfg.employees
+    n_cpd = cfg.one_time_repeat + cfg.one_time_single
+    n_all = N_VENDORS + cfg.employees + n_cpd
     for d, t in out.extracts.items():
         assert len(t["LFA1"]) == n_all
-        assert len(t["LFBK"]) == n_all  # one current bank row per vendor
+        assert len(t["LFBK"]) == n_all - n_cpd  # one bank row per vendor; none for one-time
         assert len(t["DFKKBPTAXNUM"]) == N_VENDORS
         assert len(t["CVI_VEND_LINK"]) == n_all - cfg.dq_defects_per_type  # planted gaps
         acd = t["ACDOCA"]
@@ -80,7 +81,24 @@ def test_injected_counts_match_rates(out, cfg):
     assert counts["R04"] == (round(r.r04_dormant_unblocked * N_VENDORS)
                              + round(r.r04_dormant_sperm_only * N_VENDORS))
     assert counts["R05"] == round(r.r05_reprf_blank * N_VENDORS)
+    assert counts["R06"] == (round(r.r06_alt_payee_vendor * N_VENDORS)
+                             + round(r.r06_alt_payee_company_code * N_VENDORS)
+                             + round(r.r06_payee_in_document * N_VENDORS) + cfg.one_time_repeat)
     assert counts["R07"] == round(r.r07_unconfirmed_open_items * N_VENDORS)
+
+
+def test_r06_fields_and_one_time_payments(out, cfg):
+    end = out.extracts[max(out.extracts)]
+    lfa1, lfb1 = end["LFA1"], end["LFB1"]
+    m = out.manifest[out.manifest.rule_id == "R06"]
+    static = set(lfa1[(lfa1.LNRZA != "") | (lfa1.XZEMP != "")].LIFNR) | set(
+        lfb1[lfb1.LNRZB != ""].LIFNR)
+    assert static == set(m[m.variant.str.startswith(("alt_payee", "payee"))].LIFNR)
+    k = latest_ledger(out)
+    pays = k[(k.RLDNR == "0L") & (k.KOART == "K") & (k.BLART == "KZ")].groupby("LIFNR").size()
+    for r in m[m.variant.str.contains("one_time")].itertuples():
+        assert lfa1.set_index("LIFNR").XCPDK[r.LIFNR] == "X"
+        assert pays.get(r.LIFNR, 0) == (3 if r.expected_flag else 1)
 
 
 def test_ledger_balances_and_clears(out):

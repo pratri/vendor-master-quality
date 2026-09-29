@@ -4,8 +4,11 @@ replay:      for each date, copy its files from staging into the inbox, then run
              update. --reset empties the inbox and full-refreshes on the first date.
              --single-update lands every date first and runs one update: same result (silver
              is keyed by extract_date and AUTO CDC orders by sequence), much less overhead.
-idempotency: fingerprint every silver/dim/gold table, land the date again, run the pipeline,
-             fingerprint again and fail if anything differs.
+idempotency: fingerprint every silver/dim/gold table, then
+             1. land the date again and run an update (no double counting), and
+             2. run a full refresh, rebuilding every table from the raw files (determinism).
+             Fingerprint after each and fail if anything differs. Step 1 alone would be weak:
+             Auto Loader skips files it has already ingested, so it mostly proves that.
 """
 
 import argparse
@@ -98,14 +101,17 @@ def main() -> None:
     for d in dates:
         land(staging, inbox, d)
         run_pipeline(w, a.pipeline_id)
-    after = fingerprint(spark, a.catalog, a.schema)
-    print(f"{'table':<30}{'rows before':>12}{'rows after':>12}  {'hash':<22} identical")
+    rerun = fingerprint(spark, a.catalog, a.schema)
+    run_pipeline(w, a.pipeline_id, full_refresh=True)
+    rebuilt = fingerprint(spark, a.catalog, a.schema)
+    print(f"{'table':<30}{'rows':>10}  {'hash':<24}{'rerun date':>11}{'full rebuild':>13}")
     for t in sorted(before):
-        same = before[t] == after.get(t)
-        print(f"{t:<30}{before[t][0]:>12}{after.get(t, ('-',))[0]:>12}  {before[t][1]:<22} {same}")
-    if before != after:
-        raise SystemExit(f"Rerunning {dates} changed the output")
-    print(f"Rerunning {', '.join(dates)} left all {len(before)} output tables identical.")
+        print(f"{t:<30}{before[t][0]:>10}  {before[t][1]:<24}"
+              f"{str(before[t] == rerun.get(t)):>11}{str(before[t] == rebuilt.get(t)):>13}")
+    if before != rerun or before != rebuilt:
+        raise SystemExit("Output changed after rerunning a date or rebuilding from raw files")
+    print(f"Rerunning {', '.join(dates)} and a full rebuild from raw files both left all "
+          f"{len(before)} output tables identical.")
 
 
 if __name__ == "__main__":

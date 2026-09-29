@@ -16,9 +16,9 @@ I am the author and I am learning Databricks through this build. When you create
 2. Lakeflow Declarative Pipelines (formerly Delta Live Tables): expectations for data quality, AUTO CDC (formerly APPLY CHANGES) with SCD type 2 for change history. If AUTO CDC fights us on Free Edition, fall back to a plain Delta MERGE for SCD2 and tell me.
 3. Databricks Jobs for orchestration. Databricks Asset Bundles (`databricks.yml`) so the whole workspace setup is defined in the repo.
 4. Local Python 3.11 on Windows for data extraction and synthetic data generation. Use PowerShell syntax for any commands you give me.
-5. Entity resolution: rapidfuzz only for the prototype. Splink is deferred.
-6. pytest and ruff. CI is deferred.
-7. Demo surface: a small Streamlit app over exported gold Parquet files. This is the main demo, not optional. The Databricks AI/BI dashboard is deferred.
+5. Entity resolution: rapidfuzz (production matcher) plus Splink 5.0.0 with the DuckDB backend as an evaluated comparison.
+6. pytest and ruff, run by GitHub Actions CI; `databricks bundle validate` runs when the DATABRICKS_HOST and DATABRICKS_TOKEN secrets are set.
+7. Demo surface: a small Streamlit app over exported gold Parquet files. This is the main demo, not optional. An AI/BI dashboard is also deployed by the bundle for workspace users.
 
 Databricks Free Edition has limits and its feature set changes. Before relying on a feature (pipelines, AUTO CDC, jobs, bundles, dashboards, pip installs on serverless), verify that it works in my workspace. If something is unavailable, stop and tell me, and propose the closest fallback.
 
@@ -53,7 +53,7 @@ Use real SAP DDIC table and field names. If you are unsure whether a field exist
 |---|---|---|
 | LFA1 | Vendor general data | LIFNR, KTOKK, NAME1, ADRNR, STCD1, STCD2, SPERR (posting block), SPERZ (payment block), SPERM (purchasing block), LOEVM (deletion flag), XCPDK (one-time vendor), LNRZA (alternative payee), XZEMP (payee in document allowed), CONFS (unconfirmed sensitive change) |
 | LFB1 | Vendor company code data | LIFNR, BUKRS, AKONT (reconciliation account), ZTERM, ZWELS, ZAHLS (payment block key), SPERR, LOEVM, REPRF (duplicate invoice check), LNRZB, PERNR, CONFS |
-| LFBK | Vendor bank details | LIFNR, BANKS, BANKL, BANKN, KOINH, BKVID |
+| LFBK | Vendor bank details | LIFNR, BANKS, BANKL, BANKN, KOINH, BVTYP (partner bank type; CVI maps it to BUT0BK-BKVID) |
 | BUT000 | Business Partner general data | PARTNER, PARTNER_GUID, NAME_ORG1 |
 | BUT0BK | BP bank details | PARTNER, BKVID, BANKS, BANKL, BANKN, IBAN, BK_VALID_FROM, BK_VALID_TO |
 | ADRC | Addresses | ADDRNUMBER, NAME1, STREET, CITY1, POST_CODE1, REGION, COUNTRY, PO_BOX |
@@ -71,21 +71,21 @@ Modeling rules:
 
 ## Architecture
 
-1. **Extract replay.** The generator writes N days (default 10) of daily extracts partitioned by `extract_date`. Each day includes full master data snapshots plus that day's journal lines and change documents. Day 1 is the initial load: it carries journal history but no master data changes, and its snapshot is the SCD2 baseline (`initial_load_date` bundle variable, must equal the generator start). The pipeline processes each date idempotently: rerunning a date produces identical output. The generator also plants a few data quality defects (recorded in the manifest as rule `DQ`) so the silver expectations visibly warn and drop.
+1. **Extract replay.** The generator writes N days (default 30) of daily extracts partitioned by `extract_date`. Each day includes full master data snapshots plus that day's journal lines and change documents. Day 1 is the initial load: it carries journal history but no master data changes, and its snapshot is the SCD2 baseline (`initial_load_date` bundle variable, must equal the generator start). The pipeline processes each date idempotently: rerunning a date produces identical output. The generator also plants a few data quality defects (recorded in the manifest as rule `DQ`) so the silver expectations visibly warn and drop.
 2. **Bronze.** Raw SAP-shaped tables, loaded as is, with `extract_date` and load metadata columns.
 3. **Silver.** Conformed and typed tables: vendor (LFA1 joined to BP through CVI), vendor company code, vendor bank, address, open items, payments. Expectations enforce keys, not-null and accepted values.
 4. **Change history.** Build a change feed from CDPOS rows (TABNAME in LFBK, LFA1, LFB1) plus the initial load snapshot, and apply it with AUTO CDC as SCD type 2 into `dim_vendor_bank_scd2` and `dim_vendor_controls_scd2`, sequenced by UDATE plus UTIME and CHANGENR. Bank history comes from vendor-side LFBK changes: CVI only changes LFBK when a BUT0BK row becomes valid, so future-dated BP bank rows are never applied early. BUT0BK change documents (object class BUPA_BUP) stay in bronze for audit.
 5. **Gold.** Table names carry a `gold_` prefix so the idempotency check covers them: `gold_exceptions` (one row per rule hit, with rule_id, severity, vendor, company code, evidence columns), `gold_vendor_risk` (ranked), `gold_duplicate_candidates` (matcher output), `gold_run_history` (flag counts per rule per extract_date).
 
-## Control rules (seven defined, R06 deferred for the prototype)
+## Control rules
 
 1. **R01 Duplicate vendor.** A matcher pair above threshold where both vendors are active and have open items or recent payments.
-2. **R02 Change, pay, revert.** A bank detail change in CDPOS, a clearing payment to that vendor within N days (default 7), then a second bank change. Daily snapshots miss this pattern. Change documents catch it.
+2. **R02 Change, pay, revert.** A bank detail change in CDPOS, then a second bank change within N days (default 7), with a clearing payment to that vendor dated between them. A vendor's first-ever bank setup is not a change. Daily snapshots miss this pattern. Change documents catch it.
 3. **R03 Shared bank account.** The same BANKS + BANKL + BANKN (or IBAN) on more than one vendor, or on a vendor linked to an employee (LFB1-PERNR populated).
 4. **R04 Dormant but not blocked.** No postings for 18 months or more, and none of SPERR, SPERZ or LOEVM set.
 5. **R05 Duplicate invoice check disabled.** LFB1-REPRF is blank.
-6. **R06 Alternative payee or one-time vendor exposure.** (Deferred.) LNRZA or LNRZB populated, or XZEMP set, or a one-time vendor (XCPDK) with repeat payments.
-7. **R07 Unconfirmed sensitive change with open items.** CONFS is set and the vendor has open items due within the next payment run window, defined as NETDT on or before extract_date + 7 days (overdue items count).
+6. **R06 Alternative payee or one-time vendor exposure.** LNRZA or LNRZB populated, or XZEMP set, or a one-time vendor (XCPDK) with repeat payments.
+7. **R07 Unconfirmed sensitive change with open items (payment will be held).** CONFS is set and the vendor has open items due within the next payment run window, defined as NETDT on or before extract_date + 7 days (overdue items count).
 
 ## Risk score
 
@@ -98,7 +98,7 @@ Modeling rules:
 3. **Baseline:** rapidfuzz token_set_ratio on name, plus address similarity, with a tuned threshold.
 4. **Labels:** positive pairs are two vendor records sharing a UEI. Negative pairs are candidate pairs from blocking with different UEIs and different parent UEIs. Same-parent pairs are a separate "related" class. Never sample random pairs for evaluation, because nearly all are non-matches and precision becomes meaningless.
 5. **Report:** precision, recall and F1 at the chosen threshold, a precision-recall curve, and a short error analysis with five false positives and five false negatives and why they happened. The evaluation runs on the agency's full vendor population (Interior FY2025-2026, 20,150 rows), with no oversampling.
-6. Splink and hand-labeled hard cases are deferred.
+6. Splink is evaluated on the same folds. Hard cases: 150 pairs in `data/labels/hard_case_candidates.csv`, 100 labeled by Claude following `docs/labeling_guide.md` (disclosed; a person should spot-check).
 
 ## Engineering standards
 
@@ -148,15 +148,10 @@ Design decisions, limitations and the evaluation details go below the fold.
 └── tests/
 ```
 
-## Deferred (only after the core demo works)
+## Deferred
 
-1. Splink with the DuckDB backend. Pin the version and check PyPI for the current major before writing code.
-2. Hand-labeled hard cases (`data/labels/hard_case_candidates.csv`, about 150 pairs).
-3. Rule R06.
-4. GitHub Actions CI (ruff, pytest, `databricks bundle validate`) and the badge.
-5. Databricks AI/BI dashboard.
-6. 30-day replay instead of 10.
-7. Separate architecture doc with a diagram, and a demo GIF.
+1. New rules suggested by review: duplicate or missing tax ID, employee-to-vendor match against HR data (PA0009/PA0006), sensitive-field changes with segregation-of-duties checks, actual duplicate invoices (XBLNR + amount).
+2. Real-SAP hardening listed in the README limitations (document types beyond KR/KZ, multiple bank accounts per vendor, clearing resets, currencies).
 
 ## How to work with me
 

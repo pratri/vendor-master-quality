@@ -22,10 +22,10 @@ jobs:
         run: pytest -q
 
   bundle:
-    # Needs workspace credentials; skipped until the DATABRICKS_TOKEN secret is set.
+    # Needs workspace credentials; skipped until DATABRICKS_HOST and DATABRICKS_TOKEN secrets exist.
     runs-on: ubuntu-latest
     env:
-      DATABRICKS_HOST: https://dbc-771eb7e2-bf8c.cloud.databricks.com
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
       - uses: actions/checkout@v4

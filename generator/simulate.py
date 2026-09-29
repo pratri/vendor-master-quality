@@ -41,7 +41,7 @@ LFA1_COLS = ["LIFNR", "KTOKK", "NAME1", "ADRNR", "LAND1", "STCD1", "STCD2", "SPE
              "SPERM", "LOEVM", "XCPDK", "LNRZA", "XZEMP", "CONFS", "ERDAT"]
 LFB1_COLS = ["LIFNR", "BUKRS", "AKONT", "ZTERM", "ZWELS", "ZAHLS", "SPERR", "LOEVM", "REPRF",
              "LNRZB", "PERNR", "CONFS", "ERDAT"]
-LFBK_COLS = ["LIFNR", "BANKS", "BANKL", "BANKN", "KOINH", "BKVID"]
+LFBK_COLS = ["LIFNR", "BANKS", "BANKL", "BANKN", "KOINH", "BVTYP"]
 BUT0BK_COLS = ["PARTNER", "BKVID", "BANKS", "BANKL", "BANKN", "IBAN", "KOINH", "BK_VALID_FROM",
                "BK_VALID_TO"]
 ACDOCA_COLS = ["RLDNR", "RBUKRS", "GJAHR", "BELNR", "DOCLN", "KOART", "RACCT", "LIFNR", "BLART",
@@ -191,6 +191,27 @@ class Simulator:
                              ZWELS="T", ZAHLS="", SPERR="", LOEVM="", REPRF="X", LNRZB="",
                              PERNR=f"{10000 + j:08d}", CONFS="", ERDAT=lfa1[-1]["ERDAT"]))
             emp_keys.append({"vendor_id": "", "LIFNR": lifnr, "PARTNER": partner})
+        # One-time vendor accounts (account group CPD): name and address come with each
+        # document, so there is no bank master and no USAspending counterpart.
+        n_cpd = self.cfg.one_time_repeat + self.cfg.one_time_single
+        for j in range(1, n_cpd + 1):
+            lifnr, partner = f"{800000 + j:010d}", f"{8000000 + j:010d}"
+            guid = uuid.uuid5(uuid.NAMESPACE_OID, partner).hex.upper()
+            name = f"ONE-TIME VENDOR {j:02d}"
+            erdat = dats(self.cfg.start - timedelta(days=30))
+            lfa1.append(dict(LIFNR=lifnr, KTOKK="CPD", NAME1=name, ADRNR=f"{3800000 + j:010d}",
+                             LAND1="US", STCD1="", STCD2="", SPERR="", SPERZ="", SPERM="",
+                             LOEVM="", XCPDK="X", LNRZA="", XZEMP="", CONFS="", ERDAT=erdat))
+            adrc.append(dict(ADDRNUMBER=f"{3800000 + j:010d}", DATE_FROM="00010101", NATION="",
+                             NAME1=name, STREET="", CITY1="", POST_CODE1="", REGION="",
+                             COUNTRY="US", PO_BOX=""))
+            but000.append(dict(PARTNER=partner, PARTNER_GUID=guid, TYPE="2", NAME_ORG1=name,
+                               NAME_FIRST="", NAME_LAST=""))
+            cvi.append(dict(PARTNER_GUID=guid, VENDOR=lifnr))
+            lfb1.append(dict(LIFNR=lifnr, BUKRS="1000", AKONT=RECON_ACCOUNT, ZTERM="0001",
+                             ZWELS="C", ZAHLS="", SPERR="", LOEVM="", REPRF="X", LNRZB="",
+                             PERNR="", CONFS="", ERDAT=erdat))
+            emp_keys.append({"vendor_id": "", "LIFNR": lifnr, "PARTNER": partner})
         self.key_map = pd.concat([self.key_map, pd.DataFrame(emp_keys)], ignore_index=True)
 
         self.lfa1 = {r["LIFNR"]: r for r in lfa1}
@@ -200,10 +221,13 @@ class Simulator:
         self.lfbk, self.but0bk, self.lfbk_key = {}, {}, {}
         valid_from = "20200101000000"
         for lifnr in self.lfa1:
+            if self.lfa1[lifnr]["XCPDK"]:
+                continue
             bank = self._new_bank()
             self._set_base_bank(lifnr, bank, valid_from)
         self.vendor_lifnrs = list(v["LIFNR"])
         self.employee_lifnrs = [x for x in self.lfa1 if x.startswith("0000900")]
+        self.cpd_lifnrs = [x for x in self.lfa1 if self.lfa1[x]["XCPDK"]]
         self.tx_count = dict(zip(v["LIFNR"], v["transaction_count"], strict=True))
 
     def _set_base_bank(self, lifnr: str, bank: tuple, valid_from: str) -> None:
@@ -213,7 +237,7 @@ class Simulator:
         koinh = self.lfa1[lifnr]["NAME1"]
         self.lfbk_key[lifnr] = (lifnr, *bank)
         self.lfbk[(lifnr, *bank)] = dict(LIFNR=lifnr, BANKS=bank[0], BANKL=bank[1],
-                                          BANKN=bank[2], KOINH=koinh, BKVID="0001")
+                                          BANKN=bank[2], KOINH=koinh, BVTYP="0001")
         self.but0bk[(partner, "0001")] = dict(PARTNER=partner, BKVID="0001", BANKS=bank[0],
                                               BANKL=bank[1], BANKN=bank[2], IBAN="",
                                               KOINH=koinh, BK_VALID_FROM=valid_from,
@@ -250,7 +274,7 @@ class Simulator:
             Item("LFBK", (lifnr, *old_bank), "KEY", "D"),
             Item("LFBK", (lifnr, *new_bank), "KEY", "I",
                  payload=dict(LIFNR=lifnr, BANKS=new_bank[0], BANKL=new_bank[1],
-                              BANKN=new_bank[2], KOINH=koinh, BKVID=bkvid)),
+                              BANKN=new_bank[2], KOINH=koinh, BVTYP=bkvid)),
             # Bank data is a sensitive field (T055F), so the change needs confirmation.
             Item("LFA1", (lifnr,), "CONFS", "U", "", "1"),
         ]))
@@ -314,6 +338,8 @@ class Simulator:
             self.mode[lifnr] = "recent"
         for lifnr in self.employee_lifnrs:
             self.mode[lifnr] = "recent"
+        for lifnr in self.cpd_lifnrs:
+            self.mode[lifnr] = "cpd"  # postings only from the explicit invoices below
 
         # Natural blocks: posting/payment/deletion blocked vendors are old and dormant.
         # Purchasing-block-only vendors stay active, since SPERM alone does not stop R04.
@@ -441,6 +467,31 @@ class Simulator:
             self._field_change(lifnr, self._at(off, 15), "LFA1", (lifnr,), "SPERZ", "X", "")
             self._add("BASE", "temp_payment_block", lifnr, False, event_date=on)
 
+        # R06 alternative payee and one-time vendor exposure.
+        for lifnr in take(r.r06_alt_payee_vendor):
+            payee = pool.pop()
+            self.lfa1[lifnr]["LNRZA"] = payee
+            self._add("R06", "alt_payee_lfa1", lifnr, True, other=payee, detail="LFA1-LNRZA")
+        for lifnr in take(r.r06_alt_payee_company_code):
+            payee = pool.pop()
+            self.lfb1[(lifnr, "1000")]["LNRZB"] = payee
+            self._add("R06", "alt_payee_lfb1", lifnr, True, bukrs="1000", other=payee,
+                      detail="LFB1-LNRZB")
+        for lifnr in take(r.r06_payee_in_document):
+            self.lfa1[lifnr]["XZEMP"] = "X"
+            self._add("R06", "payee_in_document", lifnr, True, detail="LFA1-XZEMP")
+        runs = self.event_runs
+        for i, lifnr in enumerate(self.cpd_lifnrs):
+            if i < self.cfg.one_time_repeat:
+                pay_days = [runs[min(i + k, len(runs) - 1)] for k in (0, 2, 4)]
+                self._add("R06", "one_time_repeat_payments", lifnr, True,
+                          event_date=pay_days[1], detail="XCPDK, paid on 3 runs")
+            else:
+                pay_days = [runs[i % len(runs)]]
+                self._add("R06", "decoy_one_time_single_payment", lifnr, False)
+            for d in pay_days:  # ZTERM 0001: due on posting, paid by that day's run
+                self._explicit_invoice(lifnr, "1000", d)
+
         self.changes.sort(key=lambda c: (c.ts, c.objectclas != "BUPA_BUP", c.objectid))
         for i, c in enumerate(self.changes, start=1):
             c.changenr = f"{500000 + i:010d}"
@@ -535,6 +586,8 @@ class Simulator:
         scale = {}
         for lifnr, bukrs in sorted(self.lfb1):
             mode = self.mode[lifnr]
+            if mode == "cpd":
+                continue
             emp = lifnr in self.employee_lifnrs
             if lifnr not in scale:
                 scale[lifnr] = 400.0 if emp else float(rng.lognormal(np.log(8000), 1.0))

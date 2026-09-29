@@ -1,0 +1,189 @@
+{
+  "datasets": [
+    {
+      "name": "run_history",
+      "displayName": "Run history",
+      "queryLines": [
+        "SELECT extract_date, rule_id, exceptions, vendors_flagged, new_vendors, exposure_flagged ",
+        "FROM gold_run_history"
+      ]
+    },
+    {
+      "name": "last_day",
+      "displayName": "Flags on the latest extract date",
+      "queryLines": [
+        "SELECT rule_id, vendors_flagged, new_vendors, exposure_flagged ",
+        "FROM gold_run_history ",
+        "WHERE extract_date = (SELECT max(extract_date) FROM gold_run_history)"
+      ]
+    },
+    {
+      "name": "high_severity",
+      "displayName": "High severity exceptions, latest date",
+      "queryLines": [
+        "SELECT e.rule_id, e.LIFNR, v.NAME1, e.BUKRS, e.detail ",
+        "FROM gold_exceptions e ",
+        "LEFT JOIN silver_vendor v ON v.LIFNR = e.LIFNR AND v.extract_date = e.extract_date ",
+        "WHERE e.severity = 'High' AND e.extract_date = (SELECT max(extract_date) FROM gold_exceptions) ",
+        "ORDER BY e.rule_id, e.LIFNR"
+      ]
+    },
+    {
+      "name": "top_risk",
+      "displayName": "Top 100 vendors by priority score, latest date",
+      "queryLines": [
+        "SELECT risk_rank, LIFNR, NAME1, array_join(rules, ', ') AS rules, severity_tier, exposure, risk ",
+        "FROM gold_vendor_risk ",
+        "WHERE extract_date = (SELECT max(extract_date) FROM gold_vendor_risk) AND risk_rank <= 100 ",
+        "ORDER BY risk_rank"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Exception monitoring",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "textbox_spec": "## Vendor master data quality\nException monitoring over SAP-shaped vendor master data. Transactional data is synthetic."
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "vendors_by_rule",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "last_day",
+                  "fields": [
+                    {"name": "rule_id", "expression": "`rule_id`"},
+                    {"name": "sum(vendors_flagged)", "expression": "SUM(`vendors_flagged`)"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "rule_id", "scale": {"type": "categorical"}, "displayName": "Rule"},
+                "y": {"fieldName": "sum(vendors_flagged)", "scale": {"type": "quantitative"}, "displayName": "Vendors flagged"}
+              },
+              "frame": {"showTitle": true, "title": "Vendors flagged per rule, latest date"}
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "run_history",
+                  "fields": [
+                    {"name": "extract_date", "expression": "`extract_date`"},
+                    {"name": "rule_id", "expression": "`rule_id`"},
+                    {"name": "sum(vendors_flagged)", "expression": "SUM(`vendors_flagged`)"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {"fieldName": "extract_date", "scale": {"type": "temporal"}, "displayName": "Extract date"},
+                "y": {"fieldName": "sum(vendors_flagged)", "scale": {"type": "quantitative"}, "displayName": "Vendors flagged"},
+                "color": {"fieldName": "rule_id", "scale": {"type": "categorical"}, "displayName": "Rule"}
+              },
+              "frame": {"showTitle": true, "title": "Vendors flagged per rule over time"}
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "high_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "high_severity",
+                  "fields": [
+                    {"name": "rule_id", "expression": "`rule_id`"},
+                    {"name": "LIFNR", "expression": "`LIFNR`"},
+                    {"name": "NAME1", "expression": "`NAME1`"},
+                    {"name": "BUKRS", "expression": "`BUKRS`"},
+                    {"name": "detail", "expression": "`detail`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "rule_id", "type": "string", "displayAs": "string", "title": "Rule", "order": 0},
+                  {"fieldName": "LIFNR", "type": "string", "displayAs": "string", "title": "Vendor", "order": 1},
+                  {"fieldName": "NAME1", "type": "string", "displayAs": "string", "title": "Name", "order": 2},
+                  {"fieldName": "BUKRS", "type": "string", "displayAs": "string", "title": "Company code", "order": 3},
+                  {"fieldName": "detail", "type": "string", "displayAs": "string", "title": "Detail", "order": 4}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "High severity: act before the next payment run"}
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 8}
+        },
+        {
+          "widget": {
+            "name": "risk_table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_risk",
+                  "fields": [
+                    {"name": "risk_rank", "expression": "`risk_rank`"},
+                    {"name": "LIFNR", "expression": "`LIFNR`"},
+                    {"name": "NAME1", "expression": "`NAME1`"},
+                    {"name": "rules", "expression": "`rules`"},
+                    {"name": "exposure", "expression": "`exposure`"},
+                    {"name": "risk", "expression": "`risk`"}
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "risk_rank", "type": "integer", "displayAs": "number", "title": "Rank", "order": 0},
+                  {"fieldName": "LIFNR", "type": "string", "displayAs": "string", "title": "Vendor", "order": 1},
+                  {"fieldName": "NAME1", "type": "string", "displayAs": "string", "title": "Name", "order": 2},
+                  {"fieldName": "rules", "type": "string", "displayAs": "string", "title": "Rules", "order": 3},
+                  {"fieldName": "exposure", "type": "decimal", "displayAs": "number", "title": "Open exposure", "order": 4},
+                  {"fieldName": "risk", "type": "decimal", "displayAs": "number", "title": "Priority score", "order": 5}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Top 100 vendors by priority score (open exposure x severity tier)"}
+            }
+          },
+          "position": {"x": 0, "y": 16, "width": 6, "height": 8}
+        }
+      ]
+    }
+  ]
+}

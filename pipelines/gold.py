@@ -48,14 +48,17 @@ def rule_r02_change_pay_revert():
                 .withColumn("next_ts", F.lead("start_ts").over(w))
                 .withColumn("next_bankn", F.lead("BANKN").over(w))
                 .withColumn("next_by", F.lead("changed_by").over(w))
-                .where((F.col("source") == "CDPOS") & F.col("next_ts").isNotNull()
+                .withColumn("next_changenr", F.lead("CHANGENR").over(w))
+                # prev_bankn: a first-ever bank setup is not a change of bank
+                .where((F.col("source") == "CDPOS") & F.col("prev_bankn").isNotNull()
+                       & F.col("next_ts").isNotNull()
                        & (F.col("next_ts") <= F.col("start_ts")
                           + F.expr(f"INTERVAL {R02_CHANGE_WINDOW_DAYS} DAYS"))))
     pays = read("silver_payments").select("LIFNR", "BUKRS", "BELNR", "BUDAT", "HSL")
     between = (F.col("BUDAT") >= F.to_date("start_ts")) & (F.col("BUDAT") <= F.to_date("next_ts"))
     hits = (versions.join(pays, "LIFNR").where(between)
-            .groupBy("LIFNR", "start_ts", "changed_by", "BANKN", "prev_bankn", "next_ts",
-                     "next_by", "next_bankn")
+            .groupBy("LIFNR", "start_ts", "changed_by", "CHANGENR", "BANKN", "prev_bankn",
+                     "next_ts", "next_by", "next_changenr", "next_bankn")
             .agg(F.min("BUKRS").alias("BUKRS"), F.min("BELNR").alias("payment_belnr"),
                  F.min("BUDAT").alias("payment_date"), F.sum("HSL").alias("payment_amount")))
     completed = F.to_date("next_ts")
@@ -67,9 +70,12 @@ def rule_r02_change_pay_revert():
                              F.date_format("payment_date", "yyyy-MM-dd"),
                              F.date_format("next_ts", "yyyy-MM-dd HH:mm"), "next_by")
     evidence = [F.col("start_ts").alias("first_change_ts"), F.col("changed_by").alias("first_by"),
+                F.col("CHANGENR").alias("first_changenr"),
+                F.col("prev_bankn").alias("original_bankn"),
                 F.col("BANKN").alias("temporary_bankn"), "payment_belnr", "payment_date",
                 "payment_amount", F.col("next_ts").alias("second_change_ts"),
                 F.col("next_by").alias("second_by"),
+                F.col("next_changenr").alias("second_changenr"),
                 (F.col("next_bankn") == F.col("prev_bankn")).alias("reverted_to_original")]
     return exceptions(hits, "R02", "High", detail, evidence, bukrs=F.col("BUKRS"))
 
@@ -108,7 +114,8 @@ def rule_r04_dormant_not_blocked():
             .groupBy("extract_date", "LIFNR").agg(F.max("BUDAT").alias("last_posting")))
     hits = (v.join(last, ["extract_date", "LIFNR"], "left")
             .withColumn("last_activity", F.coalesce("last_posting", "created_on"))
-            .where((F.col("last_activity") < F.add_months("extract_date", -R04_DORMANT_MONTHS))
+            # "18 months or more", so the boundary day counts
+            .where((F.col("last_activity") <= F.add_months("extract_date", -R04_DORMANT_MONTHS))
                    & (F.col("SPERR") == "") & (F.col("SPERZ") == "") & (F.col("LOEVM") == "")))
     months = F.floor(F.months_between("extract_date", "last_activity")).cast("int")
     detail = F.format_string("No postings since %s (%d months); SPERR, SPERZ, LOEVM not set%s",
@@ -123,11 +130,14 @@ def rule_r04_dormant_not_blocked():
 def rule_r05_duplicate_invoice_check_off():
     hits = read("silver_vendor_company_code").where(F.col("REPRF") == "")
     detail = F.format_string("LFB1-REPRF blank in company code %s", "BUKRS")
-    return exceptions(hits, "R05", "Medium", detail, ["ZTERM", "ZWELS"], bukrs=F.col("BUKRS"))
+    return exceptions(hits, "R05", "Medium", detail, ["REPRF", "BUKRS", "ZWELS"],
+                      bukrs=F.col("BUKRS"))
 
 
-@dp.view(comment="R07 unconfirmed sensitive change with items due. Reads LFA1-CONFS, "
-                 "LFB1-CONFS and open items (ACDOCA AUGBL blank, NETDT). No block fields.")
+@dp.view(comment="R07 payment will be held: unconfirmed sensitive change with items due. "
+                 "Reads LFA1-CONFS, LFB1-CONFS and open items (ACDOCA AUGBL blank, NETDT). "
+                 "F110 already holds these payments, so the job is to confirm or reject the "
+                 "change before the due date; Medium, not High.")
 def rule_r07_unconfirmed_change_items_due():
     v = read("silver_vendor").select("extract_date", "LIFNR", F.col("CONFS").alias("lfa1_confs"))
     cc = read("silver_vendor_company_code").select("extract_date", "LIFNR", "BUKRS",
@@ -139,11 +149,46 @@ def rule_r07_unconfirmed_change_items_due():
                 F.count("*").alias("items_due")))
     hits = (due.join(cc, ["extract_date", "LIFNR", "BUKRS"]).join(v, ["extract_date", "LIFNR"])
             .where((F.col("lfa1_confs") != "") | (F.col("lfb1_confs") != "")))
-    detail = F.format_string("Unconfirmed sensitive change; %d open item(s) (%s) due by %s",
-                             "items_due", F.format_number("amount_due", 2),
+    detail = F.format_string("Payment will be held: unconfirmed sensitive change; %d open "
+                             "item(s) (%s) due by %s", "items_due",
+                             F.format_number("amount_due", 2),
                              F.date_format("earliest_due", "yyyy-MM-dd"))
     evidence = ["lfa1_confs", "lfb1_confs", "items_due", "amount_due", "earliest_due"]
-    return exceptions(hits, "R07", "High", detail, evidence, bukrs=F.col("BUKRS"))
+    return exceptions(hits, "R07", "Medium", detail, evidence, bukrs=F.col("BUKRS"))
+
+
+@dp.view(comment="R06 alternative payee or one-time vendor exposure. Reads LFA1-LNRZA, "
+                 "LFB1-LNRZB, LFA1-XZEMP, LFA1-XCPDK and vendor payments (ACDOCA BLART KZ). "
+                 "No block fields.")
+def rule_r06_alternative_payee_one_time():
+    v = read("silver_vendor").select("extract_date", "LIFNR", "LNRZA", "XZEMP", "XCPDK")
+    cc = read("silver_vendor_company_code").where(F.col("LNRZB") != "").select(
+        "extract_date", "LIFNR", "BUKRS", "LNRZB")
+    lfa1_hits = v.where((F.col("LNRZA") != "") | (F.col("XZEMP") != "")).select(
+        "extract_date", "LIFNR", F.lit("").alias("BUKRS"), F.col("LNRZA").alias("payee"),
+        F.when(F.col("LNRZA") != "", F.concat(F.lit("Alternative payee "), "LNRZA",
+                                              F.lit(" (LFA1-LNRZA)")))
+        .otherwise(F.lit("Payee in document allowed (LFA1-XZEMP)")).alias("reason"))
+    lfb1_hits = cc.select("extract_date", "LIFNR", "BUKRS", F.col("LNRZB").alias("payee"),
+                          F.concat(F.lit("Alternative payee "), "LNRZB",
+                                   F.lit(" in company code "), "BUKRS",
+                                   F.lit(" (LFB1-LNRZB)")).alias("reason"))
+    # One-time accounts (XCPDK) take name and bank per document; repeat payments suggest a
+    # real supplier being paid outside the vendor master.
+    pays = read("silver_payments").select("LIFNR", "BUDAT", "BELNR", "first_extract_date")
+    repeat = (extract_dates().join(pays, (F.col("first_extract_date") <= F.col("extract_date"))
+                                   & (F.col("BUDAT") > F.date_sub("extract_date",
+                                                                  R01_RECENT_PAYMENT_DAYS)))
+              .groupBy("extract_date", "LIFNR").agg(F.countDistinct("BELNR").alias("payments"))
+              .where(F.col("payments") >= 2)
+              .join(v.where(F.col("XCPDK") != ""), ["extract_date", "LIFNR"])
+              .select("extract_date", "LIFNR", F.lit("").alias("BUKRS"),
+                      F.lit("").alias("payee"),
+                      F.format_string("One-time vendor paid %d times in 90 days (LFA1-XCPDK)",
+                                      "payments").alias("reason")))
+    hits = lfa1_hits.unionByName(lfb1_hits).unionByName(repeat)
+    return exceptions(hits, "R06", "Medium", F.col("reason"), ["payee", "reason"],
+                      bukrs=F.col("BUKRS"), related=F.col("payee"))
 
 
 @dp.materialized_view(comment="Matcher output: candidate duplicate vendor pairs with scores. "
@@ -166,8 +211,12 @@ def gold_duplicate_candidates():
 def rule_r01_duplicate_vendor():
     v = read("silver_vendor").where((F.col("LOEVM") == "") & (F.col("SPERR") == ""))
     open_items = read("silver_open_items").select("extract_date", "LIFNR").distinct()
-    paid = (extract_dates().join(read("silver_payments").select("LIFNR", "BUDAT"),
-                                 (F.col("BUDAT") <= F.col("extract_date"))
+    payments = read("silver_payments").select("LIFNR", "BUDAT", "first_extract_date")
+    # first_extract_date: only payments already delivered by that date, so later extracts
+    # cannot rewrite an earlier date's exceptions
+    paid = (extract_dates().join(payments,
+                                 (F.col("first_extract_date") <= F.col("extract_date"))
+                                 & (F.col("BUDAT") <= F.col("extract_date"))
                                  & (F.col("BUDAT") > F.date_sub("extract_date",
                                                                 R01_RECENT_PAYMENT_DAYS)))
             .select("extract_date", "LIFNR").distinct())
@@ -194,7 +243,7 @@ def rule_r01_duplicate_vendor():
 
 RULE_VIEWS = ["rule_r01_duplicate_vendor", "rule_r02_change_pay_revert", "rule_r03_shared_bank",
               "rule_r04_dormant_not_blocked", "rule_r05_duplicate_invoice_check_off",
-              "rule_r07_unconfirmed_change_items_due"]
+              "rule_r06_alternative_payee_one_time", "rule_r07_unconfirmed_change_items_due"]
 
 
 @dp.materialized_view(comment="One row per rule hit per extract_date")

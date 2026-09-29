@@ -16,6 +16,9 @@ class Rates:
     r04_dormant_sperm_only: float = 0.002
     r05_reprf_blank: float = 0.01
     r05_changed_in_window_share: float = 0.2
+    r06_alt_payee_vendor: float = 0.001  # LFA1-LNRZA
+    r06_alt_payee_company_code: float = 0.001  # LFB1-LNRZB
+    r06_payee_in_document: float = 0.001  # LFA1-XZEMP
     r07_unconfirmed_open_items: float = 0.002
     # Decoys: look similar but must not be flagged
     d02_change_revert_no_payment: float = 0.001
@@ -31,8 +34,10 @@ class Rates:
 class Config:
     seed: int = 42
     start: date = date(2026, 9, 1)
-    days: int = 10
+    days: int = 30
     employees: int = 150
+    one_time_repeat: int = 3  # one-time (CPD) accounts paid repeatedly: R06 hits
+    one_time_single: int = 2  # one-time accounts paid once: decoys
     second_cc_share: float = 0.5
     third_cc_share: float = 0.2
     dq_defects_per_type: int = 3

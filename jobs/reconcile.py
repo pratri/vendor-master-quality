@@ -10,7 +10,7 @@ import re
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-RULES = ["R02", "R03", "R04", "R05", "R07"]
+RULES = ["R02", "R03", "R04", "R05", "R06", "R07"]
 BY_COMPANY_CODE = {"R05"}
 # Background changes that look like R02/R07 activity but must not be flagged.
 BASE_DECOYS_FOR = {"R02": {"bank_change", "bank_change_future", "temp_payment_block"},

@@ -4,6 +4,7 @@ bundle:
 include:
   - jobs/*.yml
   - pipelines/*.yml
+  - dashboards/*.yml
 
 variables:
   catalog:
@@ -13,9 +14,13 @@ variables:
   initial_load_date:
     description: First extract_date; its snapshot is the SCD2 baseline. Must equal the generator start.
     default: "2026-09-01"
+  warehouse_id:
+    description: SQL warehouse for the AI/BI dashboard, looked up by name.
+    lookup:
+      warehouse: Serverless Starter Warehouse
 
-workspace:
-  host: https://dbc-771eb7e2-bf8c.cloud.databricks.com
+# The workspace comes from your CLI profile (databricks auth login) or DATABRICKS_HOST,
+# so the bundle is not tied to one workspace.
 
 resources:
   schemas:

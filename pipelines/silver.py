@@ -14,8 +14,8 @@ TERM_DAYS = {"NT30": 30, "NT45": 45, "NT60": 60, "0001": 0}
 
 
 def dats(c: str) -> Column:
-    """SAP DATS (YYYYMMDD, blank when empty) to date."""
-    return F.when(F.col(c) != "", F.to_date(F.col(c), "yyyyMMdd"))
+    """SAP DATS (YYYYMMDD) to date. The initial value is '00000000' in the database, or blank."""
+    return F.when(~F.col(c).isin("", "00000000"), F.to_date(F.col(c), "yyyyMMdd"))
 
 
 def read(name: str):
@@ -26,7 +26,7 @@ def read(name: str):
                               "and address, one row per vendor per extract_date")
 @dp.expect_or_fail("lifnr_not_null", "LIFNR IS NOT NULL")
 @dp.expect("has_business_partner", "PARTNER IS NOT NULL")
-@dp.expect("known_account_group", "KTOKK IN ('KRED', 'ZEMP')")
+@dp.expect("known_account_group", "KTOKK IN ('KRED', 'ZEMP', 'CPD')")
 @dp.expect_all({f"{c.lower()}_is_flag": f"{c} IN ('', 'X')"
                 for c in ["SPERR", "SPERZ", "SPERM", "LOEVM"]})
 @dp.expect("confs_known", "CONFS IN ('', '1', '2')")
@@ -34,7 +34,9 @@ def silver_vendor():
     a = read("bronze_lfa1").alias("a")
     c = read("bronze_cvi_vend_link").alias("c")
     b = read("bronze_but000").alias("b")
-    r = read("bronze_adrc").alias("r")
+    # ADRC's key is ADDRNUMBER + DATE_FROM + NATION; keep the default international version
+    # so other language versions do not fan out vendors.
+    r = read("bronze_adrc").where(F.col("NATION") == "").alias("r")
     same_day = lambda x, y: F.col(f"{x}.extract_date") == F.col(f"{y}.extract_date")  # noqa: E731
     return (
         a.join(c, (F.col("c.VENDOR") == F.col("a.LIFNR")) & same_day("c", "a"), "left")
@@ -73,7 +75,7 @@ def silver_vendor_company_code():
 @dp.expect("routing_number_9_digits", "BANKL RLIKE '^[0-9]{9}$'")
 def silver_vendor_bank():
     return read("bronze_lfbk").select("extract_date", "LIFNR", "BANKS", "BANKL", "BANKN",
-                                      "KOINH", "BKVID")
+                                      "KOINH", "BVTYP")
 
 
 @dp.materialized_view(comment="Business Partner bank details (BUT0BK) with validity. "
@@ -146,7 +148,8 @@ def silver_open_items():
                     "DOCLN", "BLART", "BUDAT", "NETDT", "HSL", F.abs("HSL").alias("amount")))
 
 
-@dp.materialized_view(comment="Vendor payments (BLART KZ), one row per payment document")
+@dp.materialized_view(comment="Vendor payment lines (BLART KZ); a manual clearing can carry "
+                              "more than one vendor line per document")
 def silver_payments():
     return (read("silver_journal_lines").where(F.col("BLART") == "KZ")
             .select("LIFNR", F.col("RBUKRS").alias("BUKRS"), "GJAHR", "BELNR", "BUDAT", "HSL",

@@ -1,0 +1,8 @@
+resources:
+  dashboards:
+    vendor_mdq_dashboard:
+      display_name: Vendor master data quality
+      file_path: ./vendor_mdq.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${resources.schemas.vendor_mdq.name}
