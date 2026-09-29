@@ -47,6 +47,18 @@
       "f1": 0.7767
     }
   },
+  "splink": {
+    "version": "5.0.0",
+    "threshold_match_weight": 14.75,
+    "test": {
+      "threshold": 14.75,
+      "tp": 807,
+      "fp": 101,
+      "precision": 0.8888,
+      "recall": 0.5362,
+      "f1": 0.6689
+    }
+  },
   "test_false_positives_same_name_different_uei": 343,
   "related_pairs": {
     "in_candidates": 915,
