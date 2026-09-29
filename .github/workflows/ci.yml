@@ -7,10 +7,10 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -23,12 +23,12 @@ jobs:
 
   bundle:
     # Needs workspace credentials; skipped until DATABRICKS_HOST and DATABRICKS_TOKEN secrets exist.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: databricks/setup-cli@v1.18.0
         if: env.DATABRICKS_TOKEN != ''
       - name: Validate bundle
