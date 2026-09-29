@@ -668,6 +668,33 @@ class Simulator:
         self.ledger = led.sort_values(["RBUKRS", "GJAHR", "BELNR", "DOCLN"]).reset_index(drop=True)
         self.invoices, self.payments = inv, pay
 
+    def expect_r08(self) -> None:
+        """R08 is not injected. Every vendor-side bank change (LFBK in KRED change documents)
+        followed by a payment within the window is expected; changes with no such payment are
+        decoys. Dates only: ACDOCA has no payment time, so a same-day payment counts."""
+        win, look = self.cfg.r08_window_days, self.cfg.r08_lookback_days
+        pay = self.payments[self.payments.run >= self.cfg.start]
+        first: dict[str, tuple[date, str, date]] = {}
+        changed = set()
+        for c in self.changes:
+            d = c.ts.date()
+            if c.objectclas != "KRED" or d > self.end or self.end > d + timedelta(days=look):
+                continue
+            if not any(it.tab == "LFBK" and it.chngind == "I" for it in c.items):
+                continue
+            changed.add(c.objectid)
+            p = pay[(pay.LIFNR == c.objectid) & (pay.run >= d)
+                    & (pay.run <= d + timedelta(days=win))].sort_values(["run", "BUKRS"])
+            if len(p) and (c.objectid not in first or p.run.iloc[0] < first[c.objectid][0]):
+                first[c.objectid] = (p.run.iloc[0], p.BUKRS.iloc[0], d)
+        for lifnr in sorted(changed):
+            if lifnr in first:
+                run, bukrs, d = first[lifnr]
+                self._add("R08", "change_then_payment", lifnr, True, bukrs=bukrs,
+                          event_date=run, detail=f"change {dats(d)}")
+            else:
+                self._add("R08", "change_no_payment", lifnr, False)
+
     # ---------- extracts ----------
 
     def _apply(self, c: Change) -> None:
@@ -744,6 +771,7 @@ class Simulator:
         self.build_master()
         self.plan()
         self.build_journal()
+        self.expect_r08()
         self.plant_defects()
         extracts = self.emit()
         counts = pd.DataFrame({dats(d): {t: len(df) for t, df in tabs.items()}

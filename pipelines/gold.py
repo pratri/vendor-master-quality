@@ -15,6 +15,8 @@ R02_CHANGE_WINDOW_DAYS = 7  # second bank change within this many days of the fi
 R02_LOOKBACK_DAYS = 30  # a completed pattern stays flagged this long
 R04_DORMANT_MONTHS = 18
 R07_PAYMENT_WINDOW_DAYS = 7  # NETDT on or before extract_date + 7 (overdue counts)
+R08_PAYMENT_WINDOW_DAYS = 14  # payment within this many days after a bank change
+R08_LOOKBACK_DAYS = 30  # flagged for this many days after the change
 
 
 def read(name: str) -> DataFrame:
@@ -78,6 +80,39 @@ def rule_r02_change_pay_revert():
                 F.col("next_changenr").alias("second_changenr"),
                 (F.col("next_bankn") == F.col("prev_bankn")).alias("reverted_to_original")]
     return exceptions(hits, "R02", "High", detail, evidence, bukrs=F.col("BUKRS"))
+
+
+@dp.view(comment="R08 payment soon after a bank change. Reads LFBK change documents "
+                 "(dim_vendor_bank_scd2) and vendor payments (ACDOCA BLART KZ). No block fields.")
+def rule_r08_payment_after_bank_change():
+    w = Window.partitionBy("LIFNR").orderBy("start_ts", "CHANGENR")
+    changes = (read("dim_vendor_bank_scd2")
+               .select("LIFNR", "BANKN", "CHANGENR", "changed_by", "source",
+                       F.col("__START_AT.change_ts").alias("start_ts"))
+               .withColumn("prev_bankn", F.lag("BANKN").over(w))
+               .where((F.col("source") == "CDPOS") & F.col("prev_bankn").isNotNull())
+               .withColumn("change_date", F.to_date("start_ts")))
+    # BUDAT has no time, so a payment on the day of the change counts.
+    pays = read("silver_payments").select("LIFNR", "BUKRS", "BELNR", "BUDAT", "HSL")
+    hits = changes.join(pays, "LIFNR").where(F.col("BUDAT").between(
+        F.col("change_date"), F.date_add("change_date", R08_PAYMENT_WINDOW_DAYS)))
+    hits = (extract_dates().join(hits, (F.col("BUDAT") <= F.col("extract_date")) & (
+                F.col("extract_date") <= F.date_add("change_date", R08_LOOKBACK_DAYS)))
+            .groupBy("extract_date", "LIFNR", "start_ts", "changed_by", "CHANGENR", "BANKN",
+                     "prev_bankn")
+            .agg(F.min(F.struct("BUDAT", "BELNR", "BUKRS")).alias("first"),
+                 F.count("*").alias("payments"), F.sum("HSL").alias("paid_amount"))
+            .select("*", F.col("first.BUKRS").alias("BUKRS"),
+                    F.col("first.BELNR").alias("first_payment_belnr"),
+                    F.col("first.BUDAT").alias("first_payment_date")))
+    detail = F.format_string("Bank changed %s by %s, then %d payment(s) totalling %s from %s",
+                             F.date_format("start_ts", "yyyy-MM-dd HH:mm"), "changed_by",
+                             "payments", F.format_number("paid_amount", 2),
+                             F.date_format("first_payment_date", "yyyy-MM-dd"))
+    evidence = [F.col("start_ts").alias("change_ts"), "changed_by", "CHANGENR",
+                F.col("prev_bankn").alias("old_bankn"), F.col("BANKN").alias("new_bankn"),
+                "first_payment_belnr", "first_payment_date", "payments", "paid_amount"]
+    return exceptions(hits, "R08", "Medium", detail, evidence, bukrs=F.col("BUKRS"))
 
 
 @dp.view(comment="R03 shared bank account. Reads LFBK (BANKS, BANKL, BANKN) and LFB1-PERNR "
@@ -243,7 +278,8 @@ def rule_r01_duplicate_vendor():
 
 RULE_VIEWS = ["rule_r01_duplicate_vendor", "rule_r02_change_pay_revert", "rule_r03_shared_bank",
               "rule_r04_dormant_not_blocked", "rule_r05_duplicate_invoice_check_off",
-              "rule_r06_alternative_payee_one_time", "rule_r07_unconfirmed_change_items_due"]
+              "rule_r06_alternative_payee_one_time", "rule_r07_unconfirmed_change_items_due",
+              "rule_r08_payment_after_bank_change"]
 
 
 @dp.materialized_view(comment="One row per rule hit per extract_date")

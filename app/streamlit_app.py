@@ -21,10 +21,11 @@ RULES = {
     "R05": "Duplicate invoice check off",
     "R06": "Alternative payee / one-time vendor",
     "R07": "Payment will be held (unconfirmed change)",
+    "R08": "Paid soon after a bank change",
 }
 # Categorical slots in fixed order, validated for colour vision deficiency.
 RULE_COLORS = dict(zip(RULES, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7",
-                               "#008300"], strict=True))
+                               "#008300", "#e34948"], strict=True))
 TIER = {"High": 3, "Medium": 2, "Low": 1}
 QUEUES = ["1 Act before next payment run", "2 Investigate", "3 Master data cleanup"]
 DISCLOSURE = ("Vendor names and addresses are real public data from USAspending.gov. All "
@@ -90,7 +91,7 @@ def show_value(v) -> str:
 def queue_of(rule: str, severity: str, score: float | None) -> str:
     if rule == "R02" or (rule == "R03" and severity == "High"):
         return QUEUES[0]
-    if rule in ("R03", "R06", "R07") or (rule == "R01" and (score or 0) >= 95):
+    if rule in ("R03", "R06", "R07", "R08") or (rule == "R01" and (score or 0) >= 95):
         return QUEUES[1]
     return QUEUES[2]
 
@@ -335,14 +336,16 @@ with about_tab:
         "daily through a Lakeflow pipeline on Databricks: bronze (Auto Loader), silver "
         "(expectations), SCD type 2 change history (AUTO CDC from CDHDR/CDPOS), then rules and a "
         "duplicate matcher into gold. This app reads the exported gold tables.\n\n"
-        "**How it is checked.** Every control exception is injected by the generator at a known "
-        "rate, with look-alike decoys. The pipeline's hits match the generator's injected cases "
+        "**How it is checked.** Control exceptions are injected by the generator at known rates, "
+        "with look-alike decoys; R08 cases come from the generator's own change and payment log. "
+        "The pipeline's hits match the generator's injected cases "
         "exactly (this proves the pipeline logic, not detection on real data). Rerunning a date or "
         "rebuilding from raw files leaves every output table identical. The duplicate matcher is "
         "evaluated on the real vendor names against a UEI answer key.\n\n"
         "**Work queues.** 1: R02 change-pay-revert and employee-linked shared bank accounts. "
-        "2: unconfirmed sensitive changes (payment is held until confirmed), other shared "
-        "accounts, alternative payees and one-time vendors, strong duplicate pairs (score 95+). "
+        "2: unconfirmed sensitive changes (payment is held until confirmed), payments soon after "
+        "a bank change (check the change was verified by call-back), other shared accounts, "
+        "alternative payees and one-time vendors, strong duplicate pairs (score 95+). "
         "3: other duplicates, dormant vendors, duplicate invoice check off.")
     st.markdown("**Glossary**")
     st.table(pd.DataFrame({"Term": list(GLOSSARY), "Meaning": list(GLOSSARY.values())}))

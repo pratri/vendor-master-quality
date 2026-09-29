@@ -23,6 +23,5 @@ knowledge of the organizations. The file deliberately has no UEI answer.
 
 ## Who labeled
 
-The first 100 pairs were labeled by Claude, an AI assistant, following this guide, without seeing
-the UEI key. A person should spot-check them before anyone relies on these numbers. The remaining
-50 pairs are left blank for a human labeler.
+All 150 pairs were labeled by Claude, an AI assistant, following this guide, without seeing the UEI
+key. A person should spot-check them before anyone relies on these numbers.

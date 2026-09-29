@@ -1,37 +1,37 @@
 {
-  "labeled": 100,
+  "labeled": 150,
   "label_counts": {
-    "duplicate": 63,
-    "not_duplicate": 24,
-    "unsure": 7,
-    "related": 6
+    "duplicate": 103,
+    "not_duplicate": 31,
+    "unsure": 9,
+    "related": 7
   },
-  "decided_pairs": 87,
+  "decided_pairs": 134,
   "agreement_with_uei_key": {
-    "labeled_duplicate_but_uei_says_different": 40,
+    "labeled_duplicate_but_uei_says_different": 69,
     "labeled_not_duplicate_but_uei_says_same": 0
   },
   "by_stratum": {
     "missed_true_pair": {
-      "duplicate": 18,
+      "duplicate": 26,
       "not_duplicate": 0,
-      "related": 1,
-      "unsure": 5
+      "related": 2,
+      "unsure": 7
     },
     "near_threshold": {
-      "duplicate": 6,
-      "not_duplicate": 22,
+      "duplicate": 10,
+      "not_duplicate": 29,
       "related": 5,
       "unsure": 1
     },
     "related_above_threshold": {
-      "duplicate": 16,
+      "duplicate": 24,
       "not_duplicate": 0,
       "related": 0,
       "unsure": 1
     },
     "same_name_different_uei": {
-      "duplicate": 23,
+      "duplicate": 43,
       "not_duplicate": 2,
       "related": 0,
       "unsure": 0
@@ -40,30 +40,30 @@
   "methods": {
     "WRatio (chosen)": {
       "threshold": 91,
-      "tp": 44,
+      "tp": 73,
       "fp": 3,
-      "fn": 19,
-      "precision": 0.936,
-      "recall": 0.698,
-      "f1": 0.8
+      "fn": 30,
+      "precision": 0.961,
+      "recall": 0.709,
+      "f1": 0.816
     },
     "token_set_ratio (baseline)": {
       "threshold": 91,
-      "tp": 44,
-      "fp": 3,
-      "fn": 19,
-      "precision": 0.936,
-      "recall": 0.698,
-      "f1": 0.8
+      "tp": 76,
+      "fp": 4,
+      "fn": 27,
+      "precision": 0.95,
+      "recall": 0.738,
+      "f1": 0.831
     },
     "Splink 5": {
       "threshold": 14.75,
-      "tp": 11,
+      "tp": 13,
       "fp": 0,
-      "fn": 52,
+      "fn": 90,
       "precision": 1.0,
-      "recall": 0.175,
-      "f1": 0.297
+      "recall": 0.126,
+      "f1": 0.224
     }
   }
 }

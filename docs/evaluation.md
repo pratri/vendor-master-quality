@@ -75,32 +75,35 @@ really the same legal entity.
 The file has no UEI column, so the labeler is not anchored by it; the key sits in a separate file. The
 labeling rules are in [labeling_guide.md](labeling_guide.md).
 
-**Who labeled.** The first 100 pairs were labeled by Claude, an AI assistant, following the guide. A
-person should spot-check them before relying on these numbers. The other 50 are left blank.
+**Who labeled.** All 150 pairs were labeled by Claude, an AI assistant, following the guide, without
+seeing the key. A person should spot-check them before relying on these numbers.
 
-| Group (labeled) | duplicate | related | not duplicate | unsure |
+| Group | duplicate | related | not duplicate | unsure |
 |---|---|---|---|---|
-| Identical name, different UEI (25) | 23 | 0 | 2 | 0 |
-| Near threshold (34) | 6 | 5 | 22 | 1 |
-| True pairs the matcher missed (24) | 18 | 1 | 0 | 5 |
-| "Related" above threshold (17) | 16 | 0 | 0 | 1 |
+| Identical name, different UEI (45) | 43 | 0 | 2 | 0 |
+| Near threshold (45) | 10 | 5 | 29 | 1 |
+| True pairs the matcher missed (35) | 26 | 2 | 0 | 7 |
+| "Related" above threshold (25) | 24 | 0 | 0 | 1 |
 
 What the labels show:
 
-1. **Most "false positives" against the UEI key are real duplicates.** 23 of 25 identical-name,
+1. **Most "false positives" against the UEI key are real duplicates.** 43 of 45 identical-name,
    different-UEI pairs are the same company registered more than once.
-2. **The UEI "related" class hides duplicates too.** 16 of 17 are one legal entity with a registration
+2. **The UEI "related" class hides duplicates too.** 24 of 25 are one legal entity with a registration
    per campus or office, such as the Research Foundation for SUNY or the Regents of a university.
-3. **In total, 40 labeled pairs are duplicates the UEI key calls different.** No labeled "not
+3. **In total, 69 labeled pairs are duplicates the UEI key calls different.** No labeled "not
    duplicate" shares a UEI.
 
-On the 87 pairs with a clear answer (duplicate or not duplicate):
+On the 134 pairs with a clear answer (duplicate or not duplicate):
 
 | Method | Precision | Recall | F1 |
 |---|---|---|---|
-| rapidfuzz WRatio (chosen) | 0.94 | 0.70 | 0.80 |
-| rapidfuzz token_set_ratio | 0.94 | 0.70 | 0.80 |
-| Splink 5 | 1.00 | 0.18 | 0.30 |
+| rapidfuzz WRatio (chosen) | 0.96 | 0.71 | 0.82 |
+| rapidfuzz token_set_ratio | 0.95 | 0.74 | 0.83 |
+| Splink 5 | 1.00 | 0.13 | 0.22 |
+
+On these hard pairs the two rapidfuzz scorers are within one or two pairs of each other; WRatio stays
+the choice because it wins on the full held-out population above.
 
 These pairs are chosen to be hard, so they are not a population estimate. Together with the label
 analysis they say that strict precision against the UEI key (0.78) understates the matcher, and that

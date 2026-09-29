@@ -148,6 +148,22 @@ def test_r02_pattern_in_change_documents(out):
         assert ((paid >= dates[0]) & (paid <= dates[1])).any()
 
 
+def test_r08_from_change_documents_and_payments(out, cfg):
+    hdr, pos = stacked(out, "CDHDR"), stacked(out, "CDPOS")
+    ins = pos[(pos.TABNAME == "LFBK") & (pos.CHNGIND == "I")].merge(
+        hdr[["CHANGENR", "UDATE"]], on="CHANGENR")
+    k = latest_ledger(out)
+    pays = k[(k.RLDNR == "0L") & (k.KOART == "K") & (k.BLART == "KZ")]
+    hits = ins[["OBJECTID", "UDATE"]].merge(pays[["LIFNR", "BUDAT"]], left_on="OBJECTID",
+                                            right_on="LIFNR")
+    until = [(pd.Timestamp(u) + timedelta(days=cfg.r08_window_days)).strftime("%Y%m%d")
+             for u in hits.UDATE]
+    hits = hits[(hits.BUDAT >= hits.UDATE) & (hits.BUDAT <= until)]
+    assert set(hits.LIFNR) == expected(out, "R08")
+    m = out.manifest[out.manifest.rule_id == "R08"]
+    assert len(expected(out, "R08")) > 0 and (~m.expected_flag).any()
+
+
 def test_future_dated_bank_rows_not_on_vendor_yet(out):
     for d, t in out.extracts.items():
         bk = t["BUT0BK"]

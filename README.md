@@ -7,13 +7,14 @@ monitoring over SAP vendor master data on Databricks.
 
 | Vendor records (real names) | Duplicate matcher precision / recall | Open exposure flagged |
 |---|---|---|
-| **20,150** | **0.78 / 0.86** (held-out pairs, score threshold 91 of 100) | **$39.5M** (synthetic ledger, last extract date) |
+| **20,150** | **0.78 / 0.86** (held-out pairs, score threshold 91 of 100) | **$39.6M** (synthetic ledger, last extract date) |
 
 **Highlights**
 
-- **Ground truth for every rule.** A seeded generator injects control exceptions and look-alike decoys.
-  On the last date, the pipeline's hits for R02 to R07 match the injected cases exactly: no misses, no
-  extras, no decoys, and every case first flagged on the expected day.
+- **Ground truth for every rule.** A seeded generator injects control exceptions and look-alike decoys,
+  and derives R08's expected cases from its own change and payment log. On the last date, the
+  pipeline's hits for R02 to R08 match exactly: no misses, no extras, no decoys, and every case first
+  flagged on the expected day.
 - **Proven idempotent.** Rerunning a date, and rebuilding every table from the raw files, both leave all
   output tables identical (row count plus hash). Replaying 30 dates as one update gives the same hashes
   as one update per date.
@@ -21,7 +22,7 @@ monitoring over SAP vendor master data on Databricks.
   run and switched back at 16:45 is invisible in the end-of-day snapshot. CDHDR/CDPOS feed an SCD type 2
   bank history (AUTO CDC) that shows it.
 - **An honest matcher evaluation.** rapidfuzz is compared with Splink 5 and tuned on dev pairs only.
-  The evaluation shows the UEI answer key under-counts duplicates, checked with 100 hard-case labels,
+  The evaluation shows the UEI answer key under-counts duplicates, checked with 150 hard-case labels,
   disclosed as AI-labeled.
 
 ![Streamlit demo: work queue](docs/app_screenshot.png)
@@ -70,6 +71,7 @@ databricks bundle run export_demo             # gold -> Parquet for the demo
 | R05 Duplicate invoice check off | LFB1-REPRF blank | LFB1-REPRF | Medium |
 | R06 Alternative payee / one-time vendor | LNRZA or LNRZB set, XZEMP set, or a one-time account paid twice or more in 90 days | LFA1-LNRZA, XZEMP, XCPDK; LFB1-LNRZB; ACDOCA KZ | Medium |
 | R07 Payment will be held | Unconfirmed sensitive change (CONFS) with items due by extract date + 7 days. F110 holds these payments, so the job is to confirm or reject the change. | LFA1/LFB1-CONFS; ACDOCA NETDT, AUGBL | Medium |
+| R08 Paid soon after a bank change | A bank change (not a first setup) followed by a clearing payment within 14 days. Check the change was verified by call-back. Same-day payments count, since ACDOCA carries no payment time. | CDHDR/CDPOS on LFBK; ACDOCA BLART KZ | Medium |
 
 **Priority score.** `exposure` = sum of absolute open item amounts (ACDOCA HSL, AUGBL blank) for the
 vendor. The score is exposure × the highest severity tier among its exceptions (High 3, Medium 2,
@@ -77,7 +79,7 @@ Low 1), with no other weights. R01 dominates by volume, because the dataset hold
 duplicate pairs, and dormant vendors have no exposure. So the demo opens on a **work queue**:
 
 1. **Act before the next payment run:** R02, and shared accounts linked to an employee.
-2. **Investigate:** R07, other shared accounts, R06, and duplicate pairs scoring 95 or more.
+2. **Investigate:** R07, R08, other shared accounts, R06, and duplicate pairs scoring 95 or more.
 3. **Master data cleanup:** everything else.
 
 ## Architecture
@@ -88,7 +90,7 @@ generator (local, seeded) -> landing volume: staging/ --replay job--> inbox/
     bronze_*   11 streaming tables, Auto Loader, exactly-once per file
     silver_*   8 materialized views, 28 expectations (fail on keys, drop unusable rows, warn)
     dim_vendor_bank_scd2, dim_vendor_controls_scd2   AUTO CDC from CDHDR/CDPOS, SCD type 2
-    rule_r01..r07 views -> gold_exceptions, gold_vendor_risk, gold_run_history,
+    rule_r01..r08 views -> gold_exceptions, gold_vendor_risk, gold_run_history,
                            gold_duplicate_candidates (rapidfuzz matcher output)
   jobs: replay, reconcile, idempotency_check, export_demo
   AI/BI dashboard (bundle)      Streamlit demo (DuckDB over exported Parquet)

@@ -2,7 +2,7 @@
 
 Usage:
     python -m generator --days 10
-    python -m generator --days 10 --upload   (to <landing volume>/staging)
+    python -m generator --upload   (30 days, to <landing volume>/staging)
 
 Layout (table first, so each bronze table reads one folder):
     data/extracts/<TABLE>/extract_date=YYYY-MM-DD/<TABLE>.parquet
@@ -58,7 +58,7 @@ def upload(root: Path) -> str:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--days", type=int, default=10)
+    p.add_argument("--days", type=int, default=Config().days)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--upload", action="store_true")
     args = p.parse_args()
