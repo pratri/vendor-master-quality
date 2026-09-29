@@ -49,8 +49,7 @@ GLOSSARY = {
 st.set_page_config(page_title="Vendor master data quality", layout="wide")
 
 
-# Cache keys include the data files' sizes and times, so new exported data is never served
-# stale results (Streamlit Cloud hot-reloads code on push without restarting the process).
+# Streamlit Cloud hot-reloads without restarting, so key caches on the data files.
 DATA_VERSION = str(sorted((f.name, f.stat().st_size, f.stat().st_mtime_ns)
                           for f in DATA.glob("*")))
 
@@ -225,14 +224,13 @@ queue_tab, ranking_tab, drill_tab, history_tab, about_tab = st.tabs(
     ["Work queue", "Risk ranking", "Vendor drill-down", "Run history", "About"])
 
 with queue_tab:
-    # Prefer a same-day change, pay, revert: the case an end-of-day snapshot cannot see.
+    # same-day change-pay-revert first, snapshots can't see those
     r02 = exc[exc.rule_id == "R02"].assign(same_day=lambda d: d.detail.str.contains("08:15"))
     r02 = r02.sort_values(["same_day", "LIFNR"], ascending=[False, True])
     if len(r02):
         st.info(f"Start here: vendor **{r02.LIFNR.iloc[0]}** ({r02.NAME1.iloc[0]}): "
                 f"{r02.detail.iloc[0]}. Pick it below, or any row, to see the evidence.")
-    # One case per vendor: an analyst works the vendor, not each rule hit. The case takes the
-    # most urgent queue among its rules, and its detail line comes from that rule.
+    # One row per vendor, in the queue of its most urgent rule.
     new_only = st.toggle("Only vendors with a new flag on this date",
                          help="A rule first flagged the vendor on this extract date.")
     ranked = shown.assign(new=pd.to_datetime(shown.first_flagged) > prev_day).sort_values(

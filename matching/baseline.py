@@ -4,8 +4,7 @@ import numpy as np
 import pandas as pd
 from rapidfuzz import fuzz, process
 
-# token_set_ratio scores 100 when one name's words are a subset of the other's ("RED INC" vs
-# "RED SKY INC"); WRatio blends several ratios and penalizes that. Chosen on the dev fold.
+# token_set_ratio gives 100 for subsets ("RED INC" vs "RED SKY INC"), WRatio doesn't
 NAME_SCORERS = {"token_set_ratio": fuzz.token_set_ratio, "WRatio": fuzz.WRatio}
 
 

@@ -1,10 +1,9 @@
 """Evaluate the matcher against the hidden UEI answer key.
 
-Positives: every pair of vendor records sharing a UEI, whether blocking found it or not, so
-recall includes what blocking loses. Negatives: candidate pairs with different UEIs and no
-parent link. Related: different UEIs under the same parent (or parent and child); these are
-distinct companies, so they are neither positives nor negatives and are reported apart.
-Random pairs are never sampled: nearly all would be easy non-matches and flatter precision.
+Positives: all pairs sharing a UEI, even ones blocking missed, so recall counts those.
+Negatives: candidate pairs with different UEIs and no parent link.
+Related (same parent) pairs are reported separately and not counted either way.
+No random pairs, they'd be easy non-matches and inflate precision.
 """
 
 import numpy as np

@@ -2,8 +2,7 @@
 
 Pass 1: state + first three digits of the ZIP code (same local area).
 Pass 2: first token of the normalized name (catches the same company at another address).
-Blocks above max_block are skipped; they are generic tokens like COUNTY or UNIVERSITY that
-would add many pairs and few matches. Skipped blocks are reported.
+Blocks above max_block (generic tokens like COUNTY) are skipped and reported.
 """
 
 import numpy as np

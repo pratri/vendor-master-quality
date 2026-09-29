@@ -3,9 +3,8 @@
     python -m matching.hard_cases build   -> data/labels/hard_case_candidates.csv (+ _key.csv)
     python -m matching.hard_cases score   -> data/matching/hard_case_metrics.json
 
-The candidates file carries no UEI answer, so the labeler is not anchored by it; the UEI label
-sits in a separate key file used only for scoring. Label values: duplicate, related,
-not_duplicate, unsure (see docs/labeling_guide.md).
+The UEI answer is kept in a separate key file so it doesn't bias labeling.
+Labels: duplicate, related, not_duplicate, unsure (see docs/labeling_guide.md).
 """
 
 import json

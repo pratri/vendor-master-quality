@@ -11,19 +11,16 @@ monitoring over SAP vendor master data on Databricks.
 
 **Highlights**
 
-- **Ground truth for every rule.** A seeded generator injects control exceptions and look-alike decoys,
-  and derives R08's expected cases from its own change and payment log. On the last date, the
-  pipeline's hits for R02 to R08 match exactly: no misses, no extras, no decoys, and every case first
-  flagged on the expected day.
-- **Proven idempotent.** Rerunning a date, and rebuilding every table from the raw files, both leave all
-  output tables identical (row count plus hash). Replaying 30 dates as one update gives the same hashes
-  as one update per date.
-- **Change documents catch what snapshots miss.** A bank switched at 08:15, paid at the noon payment
-  run and switched back at 16:45 is invisible in the end-of-day snapshot. CDHDR/CDPOS feed an SCD type 2
-  bank history (AUTO CDC) that shows it.
-- **An honest matcher evaluation.** rapidfuzz is compared with Splink 5 and tuned on dev pairs only.
-  The evaluation shows the UEI answer key under-counts duplicates, checked with 150 hard-case labels,
-  disclosed as AI-labeled.
+- Every rule has an answer key. The generator plants each exception plus look-alike decoys, and
+  on the last date the pipeline flags exactly the planted cases for R02 to R08, each first flagged
+  on the expected day. R08's expected cases come from the generator's own change and payment log.
+- Rerunning a date, or rebuilding every table from the raw files, leaves all output tables identical
+  (row count and hash). Replaying 30 dates in one update gives the same hashes as one update per date.
+- Bank history comes from change documents (CDHDR/CDPOS) through AUTO CDC, so a bank switched at
+  08:15, paid at the noon run and switched back at 16:45 still shows up. The end-of-day snapshot
+  looks unchanged.
+- The matcher (rapidfuzz) is compared with Splink 5 and tuned on dev pairs only. Most of its "false
+  positives" are real duplicates the UEI key misses, checked on 150 hard pairs (AI-labeled, disclosed).
 
 ![Streamlit demo: work queue](docs/app_screenshot.png)
 
@@ -133,7 +130,7 @@ the vendor tables in step. The model covers:
 - **rapidfuzz WRatio + address, chosen:** precision 0.78, recall 0.86, F1 0.82 on held-out pairs.
 - **Comparisons:** the `token_set_ratio` baseline scores 0.69 / 0.88 / 0.78, and unsupervised Splink 5
   scores 0.89 / 0.54 / 0.67.
-- **Label noise:** 92% of false positives are identical names under different UEIs. Hand labels on hard
+- **Label noise:** 92% of false positives are identical names under different UEIs. Labels on hard
   pairs confirm most are real duplicates, so strict precision is a floor.
 
 Details are in [docs/evaluation.md](docs/evaluation.md).

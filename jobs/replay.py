@@ -1,14 +1,10 @@
-"""Replay extract dates through the pipeline, or prove that rerunning a date changes nothing.
+"""Replay extract dates through the pipeline, or check that rerunning a date changes nothing.
 
-replay:      for each date, copy its files from staging into the inbox, then run one pipeline
-             update. --reset empties the inbox and full-refreshes on the first date.
-             --single-update lands every date first and runs one update: same result (silver
-             is keyed by extract_date and AUTO CDC orders by sequence), much less overhead.
-idempotency: fingerprint every silver/dim/gold table, then
-             1. land the date again and run an update (no double counting), and
-             2. run a full refresh, rebuilding every table from the raw files (determinism).
-             Fingerprint after each and fail if anything differs. Step 1 alone would be weak:
-             Auto Loader skips files it has already ingested, so it mostly proves that.
+replay:      copy each date from staging to the inbox and run a pipeline update.
+             --reset empties the inbox first, --single-update lands all dates then runs once.
+idempotency: fingerprint every silver/dim/gold table, rerun one date, then full refresh,
+             and fail if anything changes. The full refresh matters because Auto Loader
+             skips files it has already seen.
 """
 
 import argparse

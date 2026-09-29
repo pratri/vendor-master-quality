@@ -1,11 +1,8 @@
-"""Seeded synthetic SAP vendor data and daily extract replay.
+"""Seeded synthetic SAP vendor data and daily extracts.
 
-Master data is a full snapshot per extract_date. ACDOCA is a delta: lines posted that day,
-plus earlier lines that were cleared that day (re-sent with AUGBL filled). Day 1 also carries
-the history needed for the dormancy rule. CDHDR/CDPOS carry that day's change documents.
-
-Every control exception comes from a planned injection, recorded in the manifest.
-The baseline is kept clean so detections can be reconciled one to one.
+Master data: full snapshot per day. ACDOCA: that day's postings plus earlier lines cleared
+that day. Day 1 also has the history R04 needs. CDHDR/CDPOS: that day's changes.
+Every exception is planned and written to the manifest, so results reconcile one to one.
 """
 
 import uuid
@@ -669,9 +666,8 @@ class Simulator:
         self.invoices, self.payments = inv, pay
 
     def expect_r08(self) -> None:
-        """R08 is not injected. Every vendor-side bank change (LFBK in KRED change documents)
-        followed by a payment within the window is expected; changes with no such payment are
-        decoys. Dates only: ACDOCA has no payment time, so a same-day payment counts."""
+        """R08 isn't injected: any LFBK change followed by a payment in the window is expected.
+        Dates only, so a same-day payment counts."""
         win, look = self.cfg.r08_window_days, self.cfg.r08_lookback_days
         pay = self.payments[self.payments.run >= self.cfg.start]
         first: dict[str, tuple[date, str, date]] = {}

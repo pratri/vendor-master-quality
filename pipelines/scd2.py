@@ -1,12 +1,8 @@
-"""Change history: CDPOS change documents applied with AUTO CDC as SCD type 2.
+"""SCD2 change history built from CDPOS with AUTO CDC.
 
-Baseline rows come from the initial load snapshot (extract day 1). Every later version comes
-from a change document, sequenced by change time and CHANGENR, so an intraday change and
-revert shows up as two versions even though the end-of-day snapshot looks unchanged.
-
-Bank validity: a BP bank row entered with a future BK_VALID_FROM does not touch LFBK until it
-becomes valid (CVI moves it then), so building bank history from LFBK change documents never
-applies a future-dated row early. BUT0BK change documents stay in bronze for audit.
+Day 1 snapshot is the baseline. Later versions come from change documents ordered by change
+time and CHANGENR, so a same-day change and revert shows up as two versions.
+Bank history uses LFBK changes: CVI only moves a future-dated BUT0BK row once it's valid.
 """
 
 from pyspark import pipelines as dp
@@ -46,8 +42,7 @@ def bank_change_feed():
         F.to_timestamp(F.lit(INITIAL)).alias("change_ts"),
         F.lit("0000000000").alias("CHANGENR"),
         F.lit("initial_load").alias("source"), F.lit(None).cast("string").alias("changed_by"))
-    # A bank account change on LFBK is a delete plus an insert (the account is part of the
-    # key), so the insert carries the new bank in its TABKEY.
+    # LFBK bank change = delete + insert, new account is in the insert's TABKEY
     changes = change_docs(["LFBK"]).where(F.col("CHNGIND") == "I").select(
         LIFNR_KEY.alias("LIFNR"),
         F.trim(F.substring("TABKEY", 14, 3)).alias("BANKS"),

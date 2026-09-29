@@ -4,11 +4,8 @@ Usage:
     python -m matching            (writes data/matching/ and docs/pr_curve.png)
     python -m matching --upload   (also sends duplicate_candidates to the landing volume)
 
-Input is the initial load snapshot: ADRC name and address for regular vendors (LFA1-KTOKK
-KRED; employee and one-time accounts are excluded). The matcher never sees the UEI; labels
-are joined only to evaluate.
-The name weight and threshold are tuned on half the pairs (dev) and reported on the other
-half (test).
+Reads day 1 names and addresses for regular vendors (KTOKK KRED). The UEI is only joined
+for evaluation. Weight and threshold are tuned on the dev half and reported on test.
 """
 
 import argparse

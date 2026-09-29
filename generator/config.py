@@ -41,7 +41,7 @@ class Config:
     second_cc_share: float = 0.5
     third_cc_share: float = 0.2
     dq_defects_per_type: int = 3
-    # R08 is derived, not injected: a vendor bank change with a payment within this many days.
+    # R08 isn't injected, the generator works out expected cases from these
     r08_window_days: int = 14
     r08_lookback_days: int = 30  # flagged for this many days after the change
     rates: Rates = field(default_factory=Rates)

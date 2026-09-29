@@ -1,8 +1,7 @@
 """Splink 5 (Fellegi-Sunter probabilistic linkage, DuckDB backend) for comparison with rapidfuzz.
 
-Unsupervised: u from random sampling, m from expectation maximisation. No labels are used.
-Blocking uses the same two keys as matching.blocking, so both methods score the same pairs.
-Term frequency adjustment on the name down-weights agreement on common names.
+Unsupervised (u from random sampling, m from EM). Same blocking keys as matching.blocking,
+so both methods score the same pairs. Name term frequency down-weights common names.
 """
 
 import logging
@@ -15,8 +14,7 @@ from matching.blocking import block_keys
 
 
 def splink_scores(v: pd.DataFrame, seed: int = 42, use_city: bool = False) -> pd.DataFrame:
-    # City is off by default: with address and zip5 it triple-counted location disagreement
-    # and scored slightly worse on the dev fold (F1 0.661 vs 0.669).
+    # city off: double counts location with address + zip5 (dev F1 0.661 vs 0.669)
     """Match weight (log2 odds) and probability for each blocked pair."""
     keys = block_keys(v)
     df = pd.DataFrame({
@@ -47,9 +45,8 @@ def splink_scores(v: pd.DataFrame, seed: int = 42, use_city: bool = False) -> pd
     linker.training.estimate_probability_two_random_records_match(
         [block_on("name_norm", "zip5")], recall=0.7)
     linker.training.estimate_u_using_random_sampling(max_pairs=2e6, seed=seed)
-    # Train on blocks dense in true matches: identical address teaches the name levels, identical
-    # name teaches address/city/zip. Blocking on zip5 alone let EM learn "same town" instead of
-    # "same company" (m for an exact name match came out near 0.03).
+    # Train on address and name blocks. Training on zip5 learned "same town" instead of
+    # "same company" (exact-name m came out near 0.03).
     linker.training.estimate_parameters_using_expectation_maximisation(block_on("address_norm"))
     linker.training.estimate_parameters_using_expectation_maximisation(block_on("name_norm"))
 

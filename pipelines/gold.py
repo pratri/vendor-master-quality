@@ -208,8 +208,7 @@ def rule_r06_alternative_payee_one_time():
                           F.concat(F.lit("Alternative payee "), "LNRZB",
                                    F.lit(" in company code "), "BUKRS",
                                    F.lit(" (LFB1-LNRZB)")).alias("reason"))
-    # One-time accounts (XCPDK) take name and bank per document; repeat payments suggest a
-    # real supplier being paid outside the vendor master.
+    # one-time (XCPDK) accounts paid repeatedly look like a real supplier kept off the master
     pays = read("silver_payments").select("LIFNR", "BUDAT", "BELNR", "first_extract_date")
     repeat = (extract_dates().join(pays, (F.col("first_extract_date") <= F.col("extract_date"))
                                    & (F.col("BUDAT") > F.date_sub("extract_date",
@@ -247,8 +246,7 @@ def rule_r01_duplicate_vendor():
     v = read("silver_vendor").where((F.col("LOEVM") == "") & (F.col("SPERR") == ""))
     open_items = read("silver_open_items").select("extract_date", "LIFNR").distinct()
     payments = read("silver_payments").select("LIFNR", "BUDAT", "first_extract_date")
-    # first_extract_date: only payments already delivered by that date, so later extracts
-    # cannot rewrite an earlier date's exceptions
+    # only payments delivered by that date, so later extracts can't change past results
     paid = (extract_dates().join(payments,
                                  (F.col("first_extract_date") <= F.col("extract_date"))
                                  & (F.col("BUDAT") <= F.col("extract_date"))
@@ -321,7 +319,7 @@ def gold_run_history():
     per_vendor = exc.select("extract_date", "rule_id", "LIFNR").distinct()
     prev = per_vendor.select(F.date_add("extract_date", 1).alias("extract_date"), "rule_id",
                              "LIFNR", F.lit(True).alias("seen_before"))
-    # Weekends have no new flags of their own, so "new" compares with the previous calendar day.
+    # "new" compares with the previous calendar day (weekends have no postings)
     vendors = (per_vendor.join(prev, ["extract_date", "rule_id", "LIFNR"], "left")
                .join(exposure, ["extract_date", "LIFNR"], "left")
                .groupBy("extract_date", "rule_id")

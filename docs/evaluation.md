@@ -17,7 +17,7 @@
   come from the dev half. One caveat: the idea of trying WRatio came from looking at an early batch of
   test-half errors. The choice itself was made on dev F1.
 - **Reproduce.** `python -m matching` writes `data/matching/metrics.json`, the curve data, the error
-  samples and the chart. `python -m matching.hard_cases score` scores the hand labels.
+  samples and the chart. `python -m matching.hard_cases score` scores the hard-case labels.
 
 ## Blocking
 
@@ -59,12 +59,12 @@ compares word by word and handles those. rapidfuzz stays the production matcher.
 
 **Related companies.** 915 candidate pairs are same-parent or parent-child, and 199 score above the
 threshold. They are excluded from precision, but R01 still flags them. Counted as errors, operational
-precision against the UEI key would be about 0.73. The hand labels below suggest most of them are
+precision against the UEI key would be about 0.73. The hard-case labels below suggest most of them are
 really the same legal entity.
 
 ![Precision-recall curve on the test half](pr_curve.png)
 
-## Hand-labeled hard cases
+## Labeled hard cases
 
 `data/labels/hard_case_candidates.csv` holds 150 deliberately hard pairs, in four groups:
 - identical name under different UEIs (45)
@@ -141,4 +141,4 @@ recall on the hard pairs is the part to improve.
    numbered entities and short proper names (false positive 4).
 4. **Add tax ID and bank as match signals.** They are the strongest duplicate evidence in SAP (STCD1/STCD2,
    LFBK). They are synthetic here, so they are not used.
-5. **Ask a person to confirm the hand labels.** Also label the remaining 50 pairs.
+5. **Have a person review the hard-case labels.** They were AI-labeled.
