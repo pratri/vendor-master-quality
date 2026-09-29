@@ -226,7 +226,7 @@ queue_tab, ranking_tab, drill_tab, history_tab, about_tab = st.tabs(
 with queue_tab:
     # same-day change-pay-revert first, snapshots can't see those
     r02 = exc[exc.rule_id == "R02"].assign(same_day=lambda d: d.detail.str.contains("08:15"))
-    r02 = r02.sort_values(["same_day", "LIFNR"], ascending=[False, True])
+    r02 = r02.sort_values(["same_day", "exposure", "LIFNR"], ascending=[False, False, True])
     if len(r02):
         st.info(f"Start here: vendor **{r02.LIFNR.iloc[0]}** ({r02.NAME1.iloc[0]}): "
                 f"{r02.detail.iloc[0]}. Pick it below, or any row, to see the evidence.")

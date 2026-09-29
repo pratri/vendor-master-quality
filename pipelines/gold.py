@@ -105,6 +105,9 @@ def rule_r08_payment_after_bank_change():
             .select("*", F.col("first.BUKRS").alias("BUKRS"),
                     F.col("first.BELNR").alias("first_payment_belnr"),
                     F.col("first.BUDAT").alias("first_payment_date")))
+    # one row per vendor, from the earliest change that qualifies
+    earliest = Window.partitionBy("extract_date", "LIFNR").orderBy("start_ts", "CHANGENR")
+    hits = hits.withColumn("n", F.row_number().over(earliest)).where("n = 1")
     detail = F.format_string("Bank changed %s by %s, then %d payment(s) totalling %s from %s",
                              F.date_format("start_ts", "yyyy-MM-dd HH:mm"), "changed_by",
                              "payments", F.format_number("paid_amount", 2),
